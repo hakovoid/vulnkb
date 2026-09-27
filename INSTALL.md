@@ -110,8 +110,42 @@ Commandes en ligne (hors TUI) :
 ./vulnkb sync            # collecte les sources par défaut
 ./vulnkb sync osv-npm    # collecte une source précise
 ./vulnkb sources         # liste les sources enregistrées
+./vulnkb add <url>       # ajoute un article via Ollama (voir ci-dessous)
 ./vulnkb tui             # interface de recherche (= ./vulnkb sans argument)
 ```
+
+### Ajouter un article (extraction IA)
+
+Pour un write-up ou un billet de blog qui n'existe dans aucune source
+structurée, `add` fait extraire une fiche par le LLM local.
+
+Prérequis : l'Ollama partagé doit tourner, avec le modèle voulu.
+
+```sh
+cd ~/kuro_apps/ollama && docker compose up -d
+docker exec ollama-shared ollama pull qwen2.5-coder:7b   # si absent
+```
+
+Utilisation :
+
+```sh
+./vulnkb add https://www.hacktron.ai/blog/hacking-openai
+./vulnkb add -y <url>                          # sans confirmation
+./vulnkb add -model qwen2.5-coder:14b <url>    # autre modèle
+```
+
+La fiche est affichée avant d'être enregistrée. Elle apparaît ensuite dans la
+TUI avec la source `article-ia`, pour rappeler qu'elle vient d'un modèle et
+doit être relue. Les CVE, GHSA et numéros de version absents de l'article
+sont retirés automatiquement ; le résumé et la sévérité ne sont pas vérifiés.
+
+Durée indicative sans GPU (Ryzen 7 5800U, article de 14 000 caractères) :
+environ 3 à 4 minutes avec `qwen2.5-coder:7b`, 7 à 8 minutes avec le 14b.
+
+| Réglage | Option | Variable | Défaut |
+|---------|--------|----------|--------|
+| Modèle | `-model` | `VULNKB_MODEL` | `qwen2.5-coder:7b` |
+| Adresse d'Ollama | `-ollama` | `OLLAMA_HOST` | `http://localhost:11434` |
 
 ---
 
@@ -152,4 +186,7 @@ nomme (`vulnkb sync ma-source`). Pistes : NVD (CVSS/CWE), flux RSS d'éditeurs.
 | erreur cgo / `gcc: command not found` | pas de compilateur C | installer build-essential / Xcode CLT |
 | `403 Forbidden` sur `go mod tidy` | proxy Go bloqué | `GOPROXY=direct GOSUMDB=off go mod tidy` |
 | `sync` échoue en `Forbidden` | `cisa.gov` ou le bucket OSV bloqué en sortie | autoriser le domaine, ou ajouter une source interne |
+| `add` : « Ollama injoignable » | Ollama arrêté | `cd ~/kuro_apps/ollama && docker compose up -d` |
+| `add` : `model "…" not found` | modèle non téléchargé | `docker exec ollama-shared ollama pull <modèle>` |
+| `add` : fiche en anglais ou incomplète | modèle trop petit | réessayer avec `-model qwen2.5-coder:14b` |
 | l'affichage TUI est bancal | terminal trop étroit / non-TTY | élargir la fenêtre, lancer dans un vrai terminal |

@@ -18,6 +18,7 @@ CGO_ENABLED=1 go build -tags sqlite_fts5 -o vulnkb .   # compile
 ./vulnkb sources         # liste les sources disponibles
 ./vulnkb sync            # collecte les sources par défaut dans la base
 ./vulnkb sync osv-npm    # collecte une source précise
+./vulnkb add <url>       # ajoute un article (write-up, blog) via Ollama
 ./vulnkb                 # lance la TUI de recherche (commande par défaut)
 ```
 
@@ -32,6 +33,22 @@ CGO_ENABLED=1 go build -tags sqlite_fts5 -o vulnkb .   # compile
 Les entrées OSV `MAL-*` (paquets malveillants) et les advisories retirés sont
 ignorés ; une même faille publiée sous plusieurs identifiants (GHSA / GO /
 PYSEC) n'est gardée qu'une fois, ses alias restant cherchables.
+
+## Articles (extraction IA)
+
+`vulnkb add <url>` télécharge un article, en extrait le texte principal et le
+confie à un LLM local (Ollama) qui remplit une fiche : titre, résumé en
+français, composant, type de faille, sévérité, versions, remédiation,
+identifiants CVE/GHSA. La fiche est affichée puis enregistrée après
+confirmation (`-y` pour sauter la question), avec la source `article-ia`.
+
+Garde-fous : les identifiants CVE/GHSA et les numéros de version proposés par
+le modèle sont écartés s'ils n'apparaissent pas dans l'article. Le reste
+(résumé, sévérité) reste à relire.
+
+Réglages : `-model` ou `VULNKB_MODEL` (défaut `qwen2.5-coder:7b`), `-ollama` ou
+`OLLAMA_HOST` (défaut `http://localhost:11434`). Sans GPU, compter quelques
+minutes par article.
 
 Tests : `CGO_ENABLED=1 go test -tags sqlite_fts5 ./...`
 
@@ -52,8 +69,9 @@ La base est stockée dans `~/.config/vulnkb/vulnkb.db` (ou le dossier courant).
 internal/model/    format normalisé (Advisory) — le pivot commun
 internal/store/    SQLite + index FTS5, upsert et recherche
 internal/source/   interface Source + registre ; une source = un fichier
+internal/extract/  article web → texte → fiche via Ollama (commande add)
 internal/tui/      interface terminal autonome (recherche / liste / détail)
-main.go            CLI : sync, sources, tui
+main.go            CLI : sync, sources, add, tui
 ```
 
 ## Ajouter une source
@@ -63,7 +81,3 @@ Une source implémente l'interface `source.Source` (méthodes `Name()` et
 comme modèle. Une source lourde peut implémenter `Optional()` pour être exclue
 du sync par défaut (voir `osv.go`). Pistes : NVD (CVSS/CWE), flux RSS
 d'éditeurs.
-
-Pour les sources non structurées (articles de blog), l'étape suivante prévue
-est un module `extract/` qui passe le texte à un LLM pour en tirer un
-`Advisory` en JSON, rangé dans la même base.
