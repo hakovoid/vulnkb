@@ -24,7 +24,7 @@ func TestParseSeverity(t *testing.T) {
 func TestCleanMarkdown(t *testing.T) {
 	in := "### Impact\r\nA **stored** XSS in `render()`.\n\n\n\n- see [the fix](https://x.test/fix)\n* <b>version</b> <= 1.2\n```go\ncode()\n```\n[https://a.test](https://a.test)"
 	got := cleanMarkdown(in)
-	for _, want := range []string{bold + "Impact" + reset, "A stored XSS in render().", "• see the fix (https://x.test/fix)", "• version <= 1.2", "code()", "https://a.test"} {
+	for _, want := range []string{bold + "Impact" + reset, "A stored XSS in " + inlineCode + "render()" + reset + ".", "• see the fix (https://x.test/fix)", "• version <= 1.2", "code()", "https://a.test"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("sortie sans %q:\n%s", want, got)
 		}

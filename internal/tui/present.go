@@ -18,6 +18,8 @@ const (
 	blue    = "\x1b[34m"
 	green   = "\x1b[32m"
 	gray    = "\x1b[90m"
+
+	inlineCode = "\x1b[38;5;180m"
 )
 
 // severity est la gravité normalisée (voir model.ParseSeverity), avec ses
@@ -149,7 +151,7 @@ func cleanMarkdown(s string) string {
 		return p[1] + " (" + p[2] + ")"
 	})
 	s = boldMdRe.ReplaceAllString(s, "$1$2")
-	s = codeRe.ReplaceAllString(s, "$1")
+	s = codeRe.ReplaceAllString(s, inlineCode+"$1"+reset)
 	s = htmlTagRe.ReplaceAllString(s, "")
 	s = headingRe.ReplaceAllString(s, bold+"$1"+reset)
 	s = bulletRe.ReplaceAllString(s, "$1• ")

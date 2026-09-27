@@ -38,26 +38,28 @@ const titleColor = "\x1b[1;93m"
 const window = 200
 
 type ui struct {
-	st       *store.Store
-	query    []rune
-	results  []model.Advisory // résultats de rang offset à offset+len-1
-	offset   int
-	matches  int // nombre total de résultats de la recherche
-	cursor   int // rang absolu de l'entrée sélectionnée
-	top      int // rang de la première ligne affichée
-	listH    int
-	detH     int
-	rows     int
-	cols     int
-	total    int
-	detFocus bool
-	detScr   int
-	help     bool
-	helpScr  int
-	gotoMode bool
-	gotoBuf  []rune
-	kev      map[string][]store.Ref // CVE -> entrées CISA KEV
-	certfr   map[string][]store.Ref // CVE -> avis CERT-FR
+	st        *store.Store
+	query     []rune
+	results   []model.Advisory // résultats de rang offset à offset+len-1
+	offset    int
+	matches   int // nombre total de résultats de la recherche
+	cursor    int // rang absolu de l'entrée sélectionnée
+	top       int // rang de la première ligne affichée
+	listH     int
+	detH      int
+	rows      int
+	cols      int
+	total     int
+	detFocus  bool
+	detScr    int
+	help      bool
+	helpScr   int
+	gotoMode  bool
+	gotoBuf   []rune
+	richKey   string // cache du résumé mis en forme (coloration du code)
+	richLines []string
+	kev       map[string][]store.Ref // CVE -> entrées CISA KEV
+	certfr    map[string][]store.Ref // CVE -> avis CERT-FR
 }
 
 // Run lance la boucle interactive et rend la main à la sortie (esc/ctrl+c).
@@ -510,7 +512,7 @@ func (u *ui) renderDetail(b *strings.Builder, h int) {
 	}
 	if a.Summary != "" {
 		lines = append(lines, "")
-		lines = append(lines, wrapLines(cleanMarkdown(a.Summary), u.cols)...)
+		lines = append(lines, u.richSummary(a)...)
 	}
 	if len(a.References) > 0 {
 		lines = append(lines, "", cyan+"Références:"+reset)
@@ -671,4 +673,14 @@ func minInt(a, b int) int {
 		return a
 	}
 	return b
+}
+
+// richSummary met en forme le résumé de l'entrée (Markdown, code coloré) ;
+// le résultat est gardé tant que l'entrée et la largeur ne changent pas.
+func (u *ui) richSummary(a model.Advisory) []string {
+	key := a.ID + "|" + strconv.Itoa(u.cols)
+	if key != u.richKey {
+		u.richKey, u.richLines = key, renderRich(a.Summary, u.cols)
+	}
+	return u.richLines
 }

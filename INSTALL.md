@@ -9,7 +9,7 @@ retrouver une info en quelques frappes.
 
 ## 1. Prérequis
 
-- **Go 1.23+** — `go version` pour vérifier. Sinon : https://go.dev/dl/
+- **Go 1.25+** — `go version` pour vérifier. Sinon : https://go.dev/dl/
 - **Un compilateur C** (gcc ou clang). La base s'appuie sur `go-sqlite3`, qui
   utilise cgo.
   - macOS : `xcode-select --install`
