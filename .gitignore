@@ -1,0 +1,9 @@
+# binaire compilé
+/vulnkb
+vulnkb
+
+# base de données locale
+*.db
+
+# divers
+.DS_Store
