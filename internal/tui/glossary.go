@@ -173,6 +173,7 @@ func helpLines() []string {
 		"                   Un CVE déjà décrit par OSV, KEV ou un article n'apparaît pas en double",
 		"                   côté NVD ; src:nvd affiche tout de même toutes les entrées NVD.",
 		"  exploitee        failles exploitées activement (CVE présent dans CISA KEV), toutes sources",
+		"  exploit          un exploit ou une preuve de concept public existe (Exploit-DB, Metasploit, GitHub)",
 		"  mes              seulement les produits surveillés (liste : vulnkb watch add nginx vtiger…)",
 		"  Sévérité : celle de la source, sinon la plus haute sévérité NVD des CVE de l'entrée.",
 		"",

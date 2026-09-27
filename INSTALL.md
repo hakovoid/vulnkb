@@ -91,6 +91,12 @@ Sources disponibles :
   dans les 7 jours, seulement le flux des 8 derniers jours (quelques
   secondes). Pour forcer une synchro complète :
   `VULNKB_NVD_FULL=1 ./vulnkb sync nvd`.
+- `exploits` : signale les CVE pour lesquels un exploit ou une preuve de
+  concept public existe, depuis Exploit-DB, les modules Metasploit et l'index
+  PoC-in-GitHub (~50 000 références, quelques secondes). Ce ne sont que des
+  métadonnées (titre, lien, popularité), pas du code d'attaque : elles servent
+  à prioriser. Dans la TUI, le filtre `exploit` isole ces entrées et la fiche
+  liste les liens ; combinable, par exemple `mes exploit sev:high+`.
 
 Ordre de grandeur : un premier `sync` complet prend environ 2 minutes sur une
 bonne connexion, pour environ 410 000 entrées (dont 384 000 affichées) et une
@@ -163,6 +169,7 @@ Des filtres se combinent au texte :
 | `sev:high+` | cette sévérité ou plus grave |
 | `src:kev` | une source (`kev`, `osv`, `fr`, `nvd`, `ia`) ; `src:kev,fr` pour plusieurs |
 | `exploitee` | failles exploitées activement : CVE présent dans CISA KEV, toutes sources confondues |
+| `exploit` | un exploit ou une preuve de concept public existe (Exploit-DB, Metasploit, GitHub) |
 | `mes` | seulement les produits de ta liste de surveillance (voir ci-dessous) |
 
 Exemples : `nginx sev:high+ src:osv`, `exploitee src:fr`, `sev:crit gitea`,

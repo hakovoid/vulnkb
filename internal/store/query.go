@@ -23,6 +23,7 @@ type Query struct {
 	Severities []int    // niveaux model.Sev*
 	Sources    []string // valeurs de la colonne source
 	Exploited  bool
+	Exploit    bool     // filtre « exploit » : exploit public disponible
 	Watch      []string // termes de la liste de surveillance (filtre « mes »)
 	WatchReq   bool     // « mes » demandé (même si la liste est vide)
 	Invalid    []string // filtres non reconnus
@@ -56,6 +57,8 @@ func ParseQuery(raw string) Query {
 		switch {
 		case !hasColon && (k == "exploitee" || k == "exploitees" || k == "exploited"):
 			q.Exploited = true
+		case !hasColon && (k == "exploit" || k == "exploits" || k == "poc"):
+			q.Exploit = true
 		case !hasColon && (k == "mes" || k == "watch" || k == "surveille" || k == "surveilles"):
 			q.WatchReq = true
 			q.Watch = Watchlist()
@@ -108,7 +111,7 @@ func ParseQuery(raw string) Query {
 
 // HasFilters indique si la requête restreint autre chose que le texte.
 func (q Query) HasFilters() bool {
-	return len(q.Severities) > 0 || len(q.Sources) > 0 || q.Exploited || q.WatchReq
+	return len(q.Severities) > 0 || len(q.Sources) > 0 || q.Exploited || q.Exploit || q.WatchReq
 }
 
 // Impossible est vrai quand la requête ne peut renvoyer aucun résultat :
@@ -178,6 +181,9 @@ func (q Query) where() (string, []any) {
 	}
 	if q.Exploited {
 		sb.WriteString(" AND a.exploited = 1") // tenu à jour par RefreshExploited
+	}
+	if q.Exploit {
+		sb.WriteString(" AND a.has_exploit = 1") // tenu à jour par RefreshHasExploit
 	}
 	return sb.String(), args
 }

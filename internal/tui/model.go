@@ -169,6 +169,16 @@ func (m *ui) exploited(a model.Advisory) bool {
 	return false
 }
 
+// exploitsFor renvoie les exploits publics liés aux CVE de l'entrée.
+func (m *ui) exploitsFor(a model.Advisory) []model.ExploitRef {
+	cves := store.CVEs(a.ExternalID)
+	if len(cves) == 0 {
+		return nil
+	}
+	ex, _ := m.st.ExploitsFor(cves)
+	return ex
+}
+
 // certfrRefs renvoie les avis CERT-FR qui citent un CVE de l'entrée.
 func (m *ui) certfrRefs(a model.Advisory) []store.Ref {
 	if a.Source == "certfr" {

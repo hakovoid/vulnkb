@@ -32,6 +32,7 @@ CGO_ENABLED=1 go build -tags sqlite_fts5 -o vulnkb .   # compile
 | `osv-npm` | advisories OSV.dev npm (export de ~200 Mo) | non, `vulnkb sync osv-npm` |
 | `certfr` | avis et alertes du CERT-FR (ANSSI), **en français** : systèmes affectés, risques, solution, CVE | oui |
 | `nvd` | tous les CVE de la base NVD (NIST) : description, produits et versions (CPE), CWE, score CVSS. Les scores complètent la sévérité des autres sources ; un CVE déjà décrit ailleurs est masqué côté NVD (sauf `src:nvd`) | oui |
+| `exploits` | exploits et PoC publics par CVE (Exploit-DB, Metasploit, GitHub) : marqueur et filtre `exploit`, liens dans la fiche | oui |
 
 `certfr` couvre les 3 dernières années par défaut (`VULNKB_CERTFR_DAYS` pour
 la profondeur) ; les synchros suivantes ne récupèrent que les bulletins

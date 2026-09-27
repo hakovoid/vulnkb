@@ -20,6 +20,7 @@ import (
 	"strings"
 	"time"
 
+	"vulnkb/internal/exploits"
 	"vulnkb/internal/extract"
 	"vulnkb/internal/model"
 	"vulnkb/internal/nvd"
@@ -64,6 +65,7 @@ func run() error {
 			}
 		}
 		fmt.Println("nvd  (tous les CVE et leurs scores CVSS ; complète la sévérité des autres sources)")
+		fmt.Println("exploits  (exploits et PoC publics : Exploit-DB, Metasploit, dépôts GitHub)")
 		return nil
 	case "add":
 		return add(st, args)
@@ -248,21 +250,25 @@ func envOr(key, def string) string {
 // nommée), puis les scores NVD.
 func sync(st *store.Store, names []string) error {
 	var srcs []source.Source
-	withNVD := len(names) == 0
-	if len(names) == 0 {
-		srcs = source.Defaults()
-	} else {
+	all := len(names) == 0
+	withNVD, withExploits := all, all
+	if !all {
 		for _, n := range names {
-			if n == "nvd" {
+			switch n {
+			case "nvd":
 				withNVD = true
-				continue
+			case "exploits", "exploit":
+				withExploits = true
+			default:
+				s, ok := source.Get(n)
+				if !ok {
+					return fmt.Errorf("source inconnue: %s", n)
+				}
+				srcs = append(srcs, s)
 			}
-			s, ok := source.Get(n)
-			if !ok {
-				return fmt.Errorf("source inconnue: %s", n)
-			}
-			srcs = append(srcs, s)
 		}
+	} else {
+		srcs = source.Defaults()
 	}
 
 	for _, s := range srcs {
@@ -299,6 +305,9 @@ func sync(st *store.Store, names []string) error {
 	if withNVD {
 		syncNVD(st)
 	}
+	if withExploits {
+		syncExploits(st)
+	}
 	fmt.Print("→ recoupements entre sources… ")
 	if err := st.RefreshDerived(); err != nil {
 		fmt.Printf("échec: %v\n", err)
@@ -309,6 +318,29 @@ func sync(st *store.Store, names []string) error {
 	shown, _ := st.CountMatches("")
 	fmt.Printf("base: %d entrées au total, dont %d affichées par défaut\n", total, shown)
 	return nil
+}
+
+// syncExploits collecte les exploits publics (Exploit-DB, Metasploit, dépôts
+// PoC) et remplace la table locale.
+func syncExploits(st *store.Store) {
+	fmt.Print("→ exploits publics… ")
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	defer cancel()
+	start := time.Now()
+	refs, err := exploits.FetchAll(ctx, &http.Client{})
+	if len(refs) == 0 && err != nil {
+		fmt.Printf("échec : %v\n", err)
+		return
+	}
+	if err != nil {
+		fmt.Printf("(partiel : %v) ", err)
+	}
+	if e := st.ReplaceExploits(refs); e != nil {
+		fmt.Printf("écriture : %v\n", e)
+		return
+	}
+	total, _ := st.CountExploits()
+	fmt.Printf("%d références en %s\n", total, time.Since(start).Round(time.Second))
 }
 
 // nvdSyncedKey date la dernière synchro NVD complète ou incrémentale. Son nom

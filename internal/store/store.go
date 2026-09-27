@@ -81,6 +81,17 @@ CREATE TABLE IF NOT EXISTS meta (
     k TEXT PRIMARY KEY,
     v TEXT
 );
+
+-- Exploits et preuves de concept publics, par CVE.
+CREATE TABLE IF NOT EXISTS exploit_refs (
+    cve   TEXT NOT NULL,
+    kind  TEXT NOT NULL,
+    title TEXT,
+    url   TEXT NOT NULL,
+    stars INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (cve, url)
+);
+CREATE INDEX IF NOT EXISTS exploit_refs_cve ON exploit_refs(cve);
 `
 
 // bestNVD sélectionne, pour l'entrée « a », le score NVD le plus élevé
@@ -133,10 +144,22 @@ UPDATE advisories SET exploited = 0 WHERE exploited = 1 AND id NOT IN (` + kevLi
 	return err
 }
 
+// hasExploitLinked liste les entrées dont un CVE dispose d'un exploit public.
+const hasExploitLinked = `SELECT c.id FROM advisory_cves c
+    JOIN exploit_refs e ON e.cve = c.cve`
+
+// RefreshHasExploit met à jour le marqueur « exploit public disponible ».
+func (s *Store) RefreshHasExploit() error {
+	_, err := s.db.Exec(`
+UPDATE advisories SET has_exploit = 1 WHERE has_exploit = 0 AND id IN (` + hasExploitLinked + `);
+UPDATE advisories SET has_exploit = 0 WHERE has_exploit = 1 AND id NOT IN (` + hasExploitLinked + `);`)
+	return err
+}
+
 // RefreshDerived recalcule tout ce qui dépend de plusieurs sources à la fois ;
 // à appeler en fin de synchro.
 func (s *Store) RefreshDerived() error {
-	for _, f := range []func() error{s.RefreshLevels, s.RefreshShadowed, s.RefreshExploited} {
+	for _, f := range []func() error{s.RefreshLevels, s.RefreshShadowed, s.RefreshExploited, s.RefreshHasExploit} {
 		if err := f(); err != nil {
 			return err
 		}
@@ -210,10 +233,15 @@ func (s *Store) migrate() error {
 	if err != nil {
 		return err
 	}
+	exploitAdded, err := s.addColumnIfMissing("advisories", "has_exploit", "INTEGER NOT NULL DEFAULT 0")
+	if err != nil {
+		return err
+	}
 	if _, err := s.db.Exec(`
 DROP INDEX IF EXISTS advisories_source;
 CREATE INDEX IF NOT EXISTS advisories_source_pub ON advisories(source, published DESC, id);
-CREATE INDEX IF NOT EXISTS advisories_exploited ON advisories(exploited);`); err != nil {
+CREATE INDEX IF NOT EXISTS advisories_exploited ON advisories(exploited);
+CREATE INDEX IF NOT EXISTS advisories_has_exploit ON advisories(has_exploit);`); err != nil {
 		return fmt.Errorf("migration index: %w", err)
 	}
 	if _, err := s.db.Exec(`
@@ -237,6 +265,11 @@ CREATE INDEX IF NOT EXISTS advisories_shadowed ON advisories(shadowed, published
 	}
 	if exploitedAdded {
 		if err := s.RefreshExploited(); err != nil {
+			return err
+		}
+	}
+	if exploitAdded {
+		if err := s.RefreshHasExploit(); err != nil {
 			return err
 		}
 	}
@@ -540,6 +573,63 @@ func (s *Store) CountNVD() (int, error) {
 	var n int
 	err := s.db.QueryRow(`SELECT COUNT(*) FROM nvd_scores`).Scan(&n)
 	return n, err
+}
+
+// ReplaceExploits remplace toute la table des exploits par refs (les sources
+// sont re-collectées en entier à chaque synchro, et les dépôts PoC vont et
+// viennent). Appeler RefreshDerived ensuite pour le filtre « exploit ».
+func (s *Store) ReplaceExploits(refs []model.ExploitRef) error {
+	return s.inTx(func(tx *sql.Tx) error {
+		if _, err := tx.Exec(`DELETE FROM exploit_refs`); err != nil {
+			return err
+		}
+		stmt, err := tx.Prepare(`INSERT OR IGNORE INTO exploit_refs (cve, kind, title, url, stars) VALUES (?,?,?,?,?)`)
+		if err != nil {
+			return err
+		}
+		defer stmt.Close()
+		for _, r := range refs {
+			if _, err := stmt.Exec(r.CVE, r.Kind, r.Title, r.URL, r.Stars); err != nil {
+				return fmt.Errorf("exploit %s: %w", r.CVE, err)
+			}
+		}
+		return nil
+	})
+}
+
+// CountExploits renvoie le nombre de références d'exploits stockées.
+func (s *Store) CountExploits() (int, error) {
+	var n int
+	err := s.db.QueryRow(`SELECT COUNT(*) FROM exploit_refs`).Scan(&n)
+	return n, err
+}
+
+// ExploitsFor renvoie les exploits publics liés à une liste de CVE, modules
+// Metasploit et Exploit-DB d'abord, puis dépôts PoC les plus étoilés.
+func (s *Store) ExploitsFor(cves []string) ([]model.ExploitRef, error) {
+	if len(cves) == 0 {
+		return nil, nil
+	}
+	args := make([]any, len(cves))
+	for i, c := range cves {
+		args[i] = c
+	}
+	rows, err := s.db.Query(`SELECT cve, kind, title, url, stars FROM exploit_refs
+WHERE cve IN (`+placeholders(len(cves))+`)
+ORDER BY CASE kind WHEN 'msf' THEN 0 WHEN 'edb' THEN 1 ELSE 2 END, stars DESC, url`, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []model.ExploitRef
+	for rows.Next() {
+		var e model.ExploitRef
+		if err := rows.Scan(&e.CVE, &e.Kind, &e.Title, &e.URL, &e.Stars); err != nil {
+			return nil, err
+		}
+		out = append(out, e)
+	}
+	return out, rows.Err()
 }
 
 // Meta lit une valeur de suivi (date de dernière synchro…) ; "" si absente.

@@ -306,6 +306,8 @@ func (m *ui) actionLines(a model.Advisory, w int) []string {
 	var body []string
 	if m.exploited(a) {
 		body = append(body, boldRed+"⚠ exploitée activement — à corriger en priorité"+reset)
+	} else if n := len(m.exploitsFor(a)); n > 0 {
+		body = append(body, magenta+"⚑ exploit public disponible — à traiter en priorité"+reset)
 	}
 	switch {
 	case a.FixedVersions != "":
@@ -392,6 +394,15 @@ func (m *ui) detailLines(a model.Advisory, w int) []string {
 	if a.Summary != "" {
 		lines = append(lines, "")
 		lines = append(lines, renderRich(a.Summary, w)...)
+	}
+	if ex := m.exploitsFor(a); len(ex) > 0 {
+		lines = append(lines, "", boldRed+"Exploits publics"+reset+dim+" — à traiter en priorité"+reset)
+		for _, e := range ex {
+			tag := exploitKinds[e.Kind]
+			line := sty.faint.Render("• ") + magenta + tag + reset + " " + e.Title
+			lines = append(lines, wrapLines(line, w)...)
+			lines = append(lines, "  "+labelColor+"\x1b[4m"+truncEllipsis(e.URL, w-2)+reset)
+		}
 	}
 	if len(a.References) > 0 {
 		lines = append(lines, "", sty.id.Render("Références"))

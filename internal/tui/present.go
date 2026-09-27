@@ -95,6 +95,11 @@ func containsAny(s string, subs []string) bool {
 	return false
 }
 
+// exploitKinds nomme les origines d'exploit dans la fiche.
+var exploitKinds = map[string]string{
+	"msf": "Metasploit", "edb": "Exploit-DB", "poc": "PoC GitHub",
+}
+
 // shortRemediation remplace le long paragraphe générique de CISA KEV (« Apply
 // mitigations in accordance with vendor instructions… BOD 26-04… ») par une
 // consigne courte en français ; les autres remédiations sont laissées telles
@@ -128,6 +133,9 @@ func describeFilters(q store.Query) string {
 	}
 	if q.Exploited {
 		parts = append(parts, boldRed+"exploitées"+reset+dim)
+	}
+	if q.Exploit {
+		parts = append(parts, magenta+"exploit public"+reset+dim)
 	}
 	if q.WatchReq && len(q.Watch) > 0 {
 		parts = append(parts, fmt.Sprintf("%ssurveillés%s (%d)", blue, reset+dim, len(q.Watch)))
