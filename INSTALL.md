@@ -127,6 +127,7 @@ Lance `./vulnkb` (ou `./vulnkb tui`).
 | `Tab`         | basculer le focus entre la liste et le détail |
 | `Ctrl-T`      | activer / couper le filtre `mes` (produits surveillés) |
 | `Ctrl-O`      | changer le tri : pertinence → date de publication → criticité |
+| `Ctrl-Y`      | changer le thème de couleurs (mémorisé) |
 | `Ctrl-←` / `Ctrl-→` | rétrécir / élargir le panneau liste (ou glisser la séparation à la souris) |
 | molette       | faire défiler la liste ou le détail selon le panneau survolé |
 | `Entrée`      | ouvrir la fiche en plein écran (`Entrée` ou `Esc` pour revenir) |
@@ -146,9 +147,13 @@ vers la version corrective, ou la remédiation), et le lien le plus utile pour
 corriger (avis éditeur ou correctif, en écartant les agrégateurs comme NVD).
 
 L'interface suit le fond du terminal (thème sombre ou clair) et le nombre de
-couleurs qu'il gère (16, 256 ou 16 millions). La couleur d'accent (badge,
-barre de recherche, panneau actif) se change avec `VULNKB_ACCENT`, par exemple
-`VULNKB_ACCENT=#d97757 vulnkb`. Sur un terminal de moins de 100 colonnes, la
+couleurs qu'il gère (16, 256 ou 16 millions). Six thèmes de couleurs sont proposés :
+**bleu** (défaut), **rose**, **vert**, **cyan**, **violet** et **orange**. Ils changent
+l'accent (badge, barre de recherche, panneau actif, touches), les identifiants
+et libellés, et la ligne sélectionnée. `Ctrl-Y` passe au suivant dans
+l'interface ; `vulnkb theme` les liste et `vulnkb theme rose` en choisit un.
+Le choix est mémorisé ; `VULNKB_THEME=vert vulnkb` le force ponctuellement,
+et `VULNKB_ACCENT=#d97757` remplace la seule couleur d'accent. Sur un terminal de moins de 100 colonnes, la
 liste et la fiche s'empilent.
 
 Les blocs de code des descriptions (PoC, extraits vulnérables, requêtes HTTP…)

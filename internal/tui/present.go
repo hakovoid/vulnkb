@@ -138,7 +138,7 @@ func describeFilters(q store.Query) string {
 		parts = append(parts, magenta+"exploit public"+reset+dim)
 	}
 	if q.WatchReq && len(q.Watch) > 0 {
-		parts = append(parts, fmt.Sprintf("%ssurveillés%s (%d)", blue, reset+dim, len(q.Watch)))
+		parts = append(parts, sty.accent.Render("surveillés")+dim+fmt.Sprintf(" (%d)", len(q.Watch)))
 	}
 	out := ""
 	if len(parts) > 0 {

@@ -5,6 +5,7 @@ package tui
 
 import (
 	"fmt"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -47,6 +48,8 @@ type ui struct {
 	helpScr  int
 	gotoMode bool
 	gotoBuf  string
+	theme    string // thème de couleurs courant
+	flash    string // message bref affiché dans la barre de statut
 
 	lastSync time.Time
 	dbSize   int64
@@ -58,8 +61,13 @@ type ui struct {
 
 // Run lance l'interface et rend la main à la sortie (Esc ou Ctrl-C).
 func Run(st *store.Store) error {
-	initTheme()
+	name := os.Getenv("VULNKB_THEME")
+	if name == "" {
+		name, _ = st.Meta(ThemeMetaKey)
+	}
+	applied := initTheme(name)
 	m := newUI(st)
+	m.theme = applied
 	_, err := tea.NewProgram(m, tea.WithAltScreen(), tea.WithMouseCellMotion()).Run()
 	return err
 }
@@ -75,12 +83,10 @@ func newUI(st *store.Store) *ui {
 	in := textinput.New()
 	in.Prompt = ""
 	in.Placeholder = "CVE, produit, CWE, mot-clé… (? pour l'aide)"
-	in.PlaceholderStyle = sty.muted
-	in.TextStyle = sty.bright.UnsetBold()
-	in.Cursor.Style = sty.accent
 	in.Focus()
 
-	m := &ui{st: st, input: in, detail: viewport.New(0, 0), splitPct: splitDefault}
+	m := &ui{st: st, input: in, detail: viewport.New(0, 0), splitPct: splitDefault, theme: themes[0].name}
+	m.styleInput()
 	m.total, _ = st.CountMatches("")
 	m.kev, _ = st.CVEIndex("cisa-kev")
 	m.certfr, _ = st.CVEIndex("certfr")
@@ -88,6 +94,25 @@ func newUI(st *store.Store) *ui {
 	m.dbSize, _ = st.DBSize()
 	m.applySearch(runSearch(st, 0, "", store.SortAuto))
 	return m
+}
+
+// ThemeMetaKey est la clé sous laquelle le thème choisi est mémorisé en base.
+const ThemeMetaKey = "theme"
+
+// styleInput applique le thème courant au champ de recherche.
+func (m *ui) styleInput() {
+	m.input.PlaceholderStyle = sty.muted
+	m.input.TextStyle = sty.bright.UnsetBold()
+	m.input.Cursor.Style = sty.accent
+}
+
+// cycleTheme passe au thème suivant, le mémorise et recompose l'affichage.
+func (m *ui) cycleTheme() {
+	m.theme = applyTheme(nextTheme(m.theme))
+	m.styleInput()
+	m.detailID = "" // la fiche contient des couleurs : à recomposer
+	m.st.SetMeta(ThemeMetaKey, m.theme)
+	m.flash = "thème " + m.theme
 }
 
 // ---- recherche ----
@@ -294,6 +319,7 @@ func abs(n int) int {
 }
 
 func (m *ui) handleKey(k tea.KeyMsg) tea.Cmd {
+	m.flash = ""
 	key := k.String()
 	if key == "ctrl+c" {
 		return tea.Quit
@@ -340,6 +366,9 @@ func (m *ui) handleKey(k tea.KeyMsg) tea.Cmd {
 	case "ctrl+o":
 		m.sort = (m.sort + 1) % 3 // pertinence → date → criticité
 		return m.searchCmd()
+	case "ctrl+y":
+		m.cycleTheme()
+		return nil
 	case "ctrl+t":
 		m.input.SetValue(toggleWord(m.input.Value(), "mes"))
 		m.input.CursorEnd()

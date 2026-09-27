@@ -64,6 +64,8 @@ func run() error {
 		return nil
 	case "info", "stats":
 		return info(st)
+	case "theme", "theme:":
+		return themeCmd(st, args)
 	case "sources":
 		for _, s := range source.All() {
 			if source.IsOptional(s) {
@@ -80,8 +82,36 @@ func run() error {
 	case "tui":
 		return tui.Run(st)
 	default:
-		return fmt.Errorf("commande inconnue %q (sync | sources | add | watch | info | glossaire | tui)", cmd)
+		return fmt.Errorf("commande inconnue %q (sync | sources | add | watch | info | theme | glossaire | tui)", cmd)
 	}
+}
+
+// themeCmd affiche les thèmes de couleurs ou choisit celui de l'interface.
+func themeCmd(st *store.Store, args []string) error {
+	current, _ := st.Meta(tui.ThemeMetaKey)
+	if current == "" {
+		current = tui.ThemeNames()[0]
+	}
+	if len(args) == 0 {
+		fmt.Println("Thèmes de couleurs (Ctrl-Y dans l'interface pour passer au suivant) :")
+		for _, n := range tui.ThemeNames() {
+			mark := "  "
+			if strings.EqualFold(n, current) {
+				mark = "▶ "
+			}
+			fmt.Println("  " + mark + n)
+		}
+		return nil
+	}
+	name := strings.ToLower(args[0])
+	if !tui.ValidTheme(name) {
+		return fmt.Errorf("thème inconnu %q (%s)", args[0], strings.Join(tui.ThemeNames(), ", "))
+	}
+	if err := st.SetMeta(tui.ThemeMetaKey, name); err != nil {
+		return err
+	}
+	fmt.Println("thème :", name)
+	return nil
 }
 
 // info affiche un aperçu de la base : taille, entrées par source, exploits,

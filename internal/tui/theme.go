@@ -56,24 +56,94 @@ var (
 	inlineCode = "\x1b[38;5;180m"
 )
 
-// initTheme adapte la palette au terminal : fond clair ou sombre, nombre de
-// couleurs, et couleur d'accent choisie par VULNKB_ACCENT.
-func initTheme() {
-	if !lipgloss.HasDarkBackground() {
-		pal = lightPalette
-		if os.Getenv("VULNKB_CODE_STYLE") == "" {
-			codeStyle = styles.Get("github")
+// theme est une déclinaison de couleurs : accent (badge, recherche, panneau
+// actif, touches), identifiants et libellés, fond de la ligne sélectionnée ;
+// pour un terminal sombre et pour un terminal clair.
+type theme struct {
+	name        string
+	dark, light [3]string // accent, identifiants/libellés, sélection
+}
+
+// themes, dans l'ordre où Ctrl-Y les fait défiler.
+var themes = []theme{
+	{"bleu", [3]string{"#58a6ff", "#58a6ff", "#1b2a3d"}, [3]string{"#0969da", "#0969da", "#ddf4ff"}},
+	{"rose", [3]string{"#ff7eb6", "#f778ba", "#3a1d2e"}, [3]string{"#bf3989", "#bf3989", "#ffeff7"}},
+	{"vert", [3]string{"#3fb950", "#56d364", "#16301f"}, [3]string{"#1a7f37", "#1a7f37", "#dafbe1"}},
+	{"cyan", [3]string{"#39c5cf", "#56d4dd", "#133238"}, [3]string{"#1b7c83", "#1b7c83", "#d6f5f7"}},
+	{"violet", [3]string{"#bc8cff", "#d2a8ff", "#2a1f45"}, [3]string{"#8250df", "#8250df", "#fbefff"}},
+	{"orange", [3]string{"#f0883e", "#ffa657", "#3a2616"}, [3]string{"#bc4c00", "#bc4c00", "#fff1e5"}},
+}
+
+// ThemeNames renvoie les noms des thèmes disponibles.
+func ThemeNames() []string {
+	var out []string
+	for _, t := range themes {
+		out = append(out, t.name)
+	}
+	return out
+}
+
+// ValidTheme indique si name est un thème connu.
+func ValidTheme(name string) bool {
+	for _, t := range themes {
+		if strings.EqualFold(t.name, name) {
+			return true
 		}
 	}
-	if a := os.Getenv("VULNKB_ACCENT"); strings.HasPrefix(a, "#") && len(a) == 7 {
-		pal.accent = a
+	return false
+}
+
+// nextTheme renvoie le thème qui suit name dans la liste (en boucle).
+func nextTheme(name string) string {
+	for i, t := range themes {
+		if strings.EqualFold(t.name, name) {
+			return themes[(i+1)%len(themes)].name
+		}
 	}
-	profile := lipgloss.ColorProfile()
-	if profile == termenv.TrueColor {
+	return themes[0].name
+}
+
+// État du terminal, détecté une fois par initTheme.
+var (
+	termDark     = true
+	colorProfile = termenv.TrueColor
+)
+
+// initTheme détecte le terminal (fond clair ou sombre, nombre de couleurs)
+// puis applique le thème demandé.
+func initTheme(name string) string {
+	termDark = lipgloss.HasDarkBackground()
+	if !termDark && os.Getenv("VULNKB_CODE_STYLE") == "" {
+		codeStyle = styles.Get("github")
+	}
+	colorProfile = lipgloss.ColorProfile()
+	if colorProfile == termenv.TrueColor {
 		codeFormatter = formatters.TTY16m
 	}
+	return applyTheme(name)
+}
+
+// applyTheme installe le thème name (le premier si inconnu) et renvoie son
+// nom. VULNKB_ACCENT (#rrggbb) remplace la couleur d'accent.
+func applyTheme(name string) string {
+	t := themes[0]
+	for _, x := range themes {
+		if strings.EqualFold(x.name, name) {
+			t = x
+		}
+	}
+	base, c := darkPalette, t.dark
+	if !termDark {
+		base, c = lightPalette, t.light
+	}
+	base.accent, base.id, base.selBg = c[0], c[1], c[2]
+	if a := os.Getenv("VULNKB_ACCENT"); strings.HasPrefix(a, "#") && len(a) == 7 {
+		base.accent = a
+	}
+	pal = base
+
 	fg := func(hex string) string {
-		seq := profile.Color(hex).Sequence(false)
+		seq := colorProfile.Color(hex).Sequence(false)
 		if seq == "" {
 			return ""
 		}
@@ -86,6 +156,7 @@ func initTheme() {
 	titleColor = bold + fg(pal.bright)
 	inlineCode = fg(pal.orange)
 	buildStyles()
+	return t.name
 }
 
 // Styles Lipgloss des éléments de l'interface.

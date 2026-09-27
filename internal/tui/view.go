@@ -164,10 +164,13 @@ func (m *ui) statusView(w int) string {
 	case m.zoom:
 		items = []kv{{"↑↓ pgup pgdn", "défiler"}, {"entrée esc", "revenir à la liste"}, {"? ", "aide"}}
 	default:
-		items = []kv{{"↑↓", "naviguer"}, {"tab", "liste/détail"}, {"^t", "mes"}, {"^o", "tri"}, {"^←→", "largeur"},
+		items = []kv{{"↑↓", "naviguer"}, {"tab", "liste/détail"}, {"^t", "mes"}, {"^o", "tri"}, {"^y", "thème"}, {"^←→", "largeur"},
 			{"entrée", "fiche"}, {"^g", "n°"}, {"?", "aide"}, {"esc", "quitter"}}
 	}
 	var parts []string
+	if m.flash != "" {
+		parts = append(parts, sty.accent.Render("● "+m.flash))
+	}
 	for _, it := range items {
 		parts = append(parts, sty.key.Render(strings.TrimSpace(it.k))+" "+sty.muted.Render(it.v))
 	}

@@ -158,6 +158,7 @@ func helpLines() []string {
 		"  Tab              passer de la liste au détail et inversement",
 		"  Ctrl-T           activer / couper le filtre « mes » (produits surveillés)",
 		"  Ctrl-O           changer le tri : pertinence → date de publication → criticité",
+		"  Ctrl-Y           changer le thème de couleurs (bleu, rose, vert, cyan, violet, orange)",
 		"  Ctrl-← / Ctrl-→  élargir / rétrécir le panneau liste (ou glisser la séparation à la souris)",
 		"  molette          faire défiler la liste ou le détail selon le panneau survolé",
 		"  Entrée           ouvrir la fiche en plein écran (Entrée ou Esc pour revenir)",

@@ -44,7 +44,7 @@ func navUI(t *testing.T, n int) *ui {
 
 var specialKeys = map[string]tea.KeyType{
 	"up": tea.KeyUp, "down": tea.KeyDown, "pgup": tea.KeyPgUp, "pgdown": tea.KeyPgDown,
-	"home": tea.KeyHome, "end": tea.KeyEnd, "enter": tea.KeyEnter, "esc": tea.KeyEsc, "ctrl+t": tea.KeyCtrlT,
+	"home": tea.KeyHome, "end": tea.KeyEnd, "enter": tea.KeyEnter, "esc": tea.KeyEsc, "ctrl+t": tea.KeyCtrlT, "ctrl+y": tea.KeyCtrlY,
 	"tab": tea.KeyTab, "ctrl+g": tea.KeyCtrlG, "backspace": tea.KeyBackspace,
 }
 
@@ -272,5 +272,30 @@ func TestToggleWatchFilter(t *testing.T) {
 	press(m, "ctrl+t")
 	if m.input.Value() != "" || m.matches != 50 {
 		t.Errorf("Ctrl-T (retour) : saisie %q, %d résultats", m.input.Value(), m.matches)
+	}
+}
+
+func TestThemes(t *testing.T) {
+	defer applyTheme("bleu")
+	if got := applyTheme("rose"); got != "rose" || pal.accent != "#ff7eb6" || pal.id != "#f778ba" {
+		t.Errorf("rose : %s %s %s", got, pal.accent, pal.id)
+	}
+	if got := applyTheme("inconnu"); got != "bleu" || pal.accent != "#58a6ff" {
+		t.Errorf("thème inconnu : %s %s", got, pal.accent)
+	}
+	if nextTheme("orange") != "bleu" || nextTheme("bleu") != "rose" {
+		t.Error("cycle des thèmes incorrect")
+	}
+	m := navUI(t, 20)
+	press(m, "ctrl+y")
+	if m.theme != "rose" || !strings.Contains(stripANSI(m.View()), "thème rose") {
+		t.Errorf("Ctrl-Y : thème %q", m.theme)
+	}
+	if saved, _ := m.st.Meta(ThemeMetaKey); saved != "rose" {
+		t.Errorf("thème non mémorisé : %q", saved)
+	}
+	press(m, "down")
+	if strings.Contains(stripANSI(m.View()), "thème rose") {
+		t.Error("le message du thème devrait disparaître à la touche suivante")
 	}
 }
