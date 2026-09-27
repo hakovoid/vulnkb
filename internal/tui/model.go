@@ -39,9 +39,10 @@ type ui struct {
 	detailID      string // entrée affichée dans le détail
 	detailW       int
 
-	splitPct int  // largeur du panneau liste, en % (disposition côte à côte)
-	detFocus bool // Tab : flèches pour le détail
-	zoom     bool // Entrée : fiche en plein écran
+	splitPct int        // largeur du panneau liste, en % (disposition côte à côte)
+	sort     store.Sort // ordre des résultats
+	detFocus bool       // Tab : flèches pour le détail
+	zoom     bool       // Entrée : fiche en plein écran
 	help     bool
 	helpScr  int
 	gotoMode bool
@@ -83,7 +84,7 @@ func newUI(st *store.Store) *ui {
 	m.kev, _ = st.CVEIndex("cisa-kev")
 	m.certfr, _ = st.CVEIndex("certfr")
 	m.lastSync, _ = st.LastSync()
-	m.applySearch(runSearch(st, 0, ""))
+	m.applySearch(runSearch(st, 0, "", store.SortAuto))
 	return m
 }
 
@@ -96,10 +97,10 @@ type searchResult struct {
 	results []model.Advisory
 }
 
-func runSearch(s *store.Store, seq int, q string) searchResult {
+func runSearch(s *store.Store, seq int, q string, sort store.Sort) searchResult {
 	r := searchResult{seq: seq, query: q}
 	r.matches, _ = s.CountMatches(q)
-	r.results, _ = s.SearchPage(q, 0, window)
+	r.results, _ = s.SearchPageSorted(q, sort, 0, window)
 	return r
 }
 
@@ -107,12 +108,12 @@ func runSearch(s *store.Store, seq int, q string) searchResult {
 // pendant une requête lente, et une réponse périmée est ignorée.
 func (m *ui) searchCmd() tea.Cmd {
 	m.seq++
-	seq, q, s := m.seq, m.input.Value(), m.st
+	seq, q, s, sort := m.seq, m.input.Value(), m.st, m.sort
 	if m.syncSearch {
-		m.applySearch(runSearch(s, seq, q))
+		m.applySearch(runSearch(s, seq, q, sort))
 		return nil
 	}
-	return func() tea.Msg { return runSearch(s, seq, q) }
+	return func() tea.Msg { return runSearch(s, seq, q, sort) }
 }
 
 func (m *ui) applySearch(r searchResult) {
@@ -125,7 +126,7 @@ func (m *ui) applySearch(r searchResult) {
 }
 
 func (m *ui) fetchWindow(offset int) {
-	res, err := m.st.SearchPage(m.query, offset, window)
+	res, err := m.st.SearchPageSorted(m.query, m.sort, offset, window)
 	if err != nil {
 		res = nil
 	}
@@ -334,6 +335,9 @@ func (m *ui) handleKey(k tea.KeyMsg) tea.Cmd {
 	case "ctrl+right":
 		m.setSplit(m.splitPct + 4)
 		return nil
+	case "ctrl+o":
+		m.sort = (m.sort + 1) % 3 // pertinence → date → criticité
+		return m.searchCmd()
 	}
 
 	before := m.input.Value()

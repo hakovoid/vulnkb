@@ -489,10 +489,16 @@ func (s *Store) Search(query string, limit int) ([]model.Advisory, error) {
 	return s.SearchPage(query, 0, limit)
 }
 
-// SearchPage renvoie limit résultats à partir du rang offset (0 = premier).
-// La saisie peut mêler texte et filtres (voir Query). L'ordre est stable
-// d'une page à l'autre.
+// SearchPage renvoie limit résultats à partir du rang offset (0 = premier),
+// dans l'ordre par défaut (pertinence/date).
 func (s *Store) SearchPage(query string, offset, limit int) ([]model.Advisory, error) {
+	return s.SearchPageSorted(query, SortAuto, offset, limit)
+}
+
+// SearchPageSorted est SearchPage avec un mode de tri explicite. La saisie
+// peut mêler texte et filtres (voir Query). L'ordre est stable d'une page à
+// l'autre.
+func (s *Store) SearchPageSorted(query string, sort Sort, offset, limit int) ([]model.Advisory, error) {
 	if limit <= 0 {
 		limit = 50
 	}
@@ -503,7 +509,8 @@ func (s *Store) SearchPage(query string, offset, limit int) ([]model.Advisory, e
 	// Deux temps : les identifiants de la page d'abord, puis le détail de ces
 	// seules entrées. En une requête, SQLite calculerait le score NVD de
 	// toutes les entrées filtrées avant de trier.
-	from, order, args := searchFrom(q)
+	from, fts, args := searchFrom(q)
+	order := orderBy(sort, fts)
 	args = append(args, limit, max(0, offset))
 	idRows, err := s.db.Query(`SELECT a.id `+from+` ORDER BY `+order+` LIMIT ? OFFSET ?`, args...)
 	if err != nil {
@@ -654,25 +661,61 @@ func (s *Store) CountMatches(query string) (int, error) {
 	if q.Impossible() {
 		return 0, nil
 	}
-	from, _, args := searchFrom(q)
+	from, _, args := searchFrom(q) // le tri ne change pas le total
 	var n int
 	err := s.db.QueryRow(`SELECT COUNT(*) `+from, args...).Scan(&n)
 	return n, err
 }
 
-// searchFrom renvoie les clauses FROM/WHERE et ORDER BY d'une recherche. La
-// recherche plein-texte réunit le texte libre et, le cas échéant, le filtre
-// « mes » (les entrées mentionnant un produit surveillé).
-func searchFrom(q Query) (from, order string, args []any) {
+// Sort choisit l'ordre des résultats.
+type Sort int
+
+const (
+	SortAuto     Sort = iota // pertinence si recherche texte, sinon date
+	SortDate                 // date de publication décroissante
+	SortSeverity             // criticité décroissante, puis date
+)
+
+// SortLabel nomme un mode de tri pour l'affichage.
+func SortLabel(s Sort) string {
+	switch s {
+	case SortDate:
+		return "date"
+	case SortSeverity:
+		return "criticité"
+	default:
+		return "pertinence"
+	}
+}
+
+// searchFrom renvoie les clauses FROM/WHERE d'une recherche et si elle porte
+// sur l'index plein-texte. La recherche plein-texte réunit le texte libre et,
+// le cas échéant, le filtre « mes » (produits surveillés).
+func searchFrom(q Query) (from string, fts bool, args []any) {
 	filter, fargs := q.where()
 	match := q.matchExpr()
 	if match == "" {
-		return `FROM advisories a WHERE 1=1` + filter, `a.published DESC, a.id`, fargs
+		return `FROM advisories a WHERE 1=1` + filter, false, fargs
 	}
 	// CROSS JOIN impose de partir de l'index plein-texte : sinon SQLite peut
 	// parcourir toutes les entrées visibles et interroger l'index pour chacune.
 	return `FROM advisories_fts f CROSS JOIN advisories a ON a.rowid = f.rowid
-WHERE advisories_fts MATCH ?` + filter, `f.rank, a.id`, append([]any{match}, fargs...)
+WHERE advisories_fts MATCH ?` + filter, true, append([]any{match}, fargs...)
+}
+
+// orderBy renvoie la clause ORDER BY selon le mode de tri.
+func orderBy(sort Sort, fts bool) string {
+	switch sort {
+	case SortDate:
+		return `a.published DESC, a.id`
+	case SortSeverity:
+		return `a.eff_level DESC, a.published DESC, a.id`
+	default:
+		if fts {
+			return `f.rank, a.id`
+		}
+		return `a.published DESC, a.id`
+	}
 }
 
 // Ref désigne brièvement une entrée, pour les renvois entre sources.

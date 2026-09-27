@@ -125,6 +125,7 @@ Lance `./vulnkb` (ou `./vulnkb tui`).
 | `Début` / `Fin` | premier / dernier résultat                 |
 | `Ctrl-G`      | aller au résultat n° … (taper le numéro, puis `Entrée`) |
 | `Tab`         | basculer le focus entre la liste et le détail |
+| `Ctrl-O`      | changer le tri : pertinence → date de publication → criticité |
 | `Ctrl-←` / `Ctrl-→` | rétrécir / élargir le panneau liste (ou glisser la séparation à la souris) |
 | molette       | faire défiler la liste ou le détail selon le panneau survolé |
 | `Entrée`      | ouvrir la fiche en plein écran (`Entrée` ou `Esc` pour revenir) |

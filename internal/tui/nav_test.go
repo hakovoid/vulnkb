@@ -122,12 +122,12 @@ func TestStaleSearchIgnored(t *testing.T) {
 	m := navUI(t, 50)
 	m.syncSearch = false
 	press(m, "s")
-	old := runSearch(m.st, m.seq-1, "ancienne")
+	old := runSearch(m.st, m.seq-1, "ancienne", store.SortAuto)
 	m.Update(old)
 	if m.query == "ancienne" {
 		t.Error("réponse d'une recherche périmée appliquée")
 	}
-	m.Update(runSearch(m.st, m.seq, "spéciale"))
+	m.Update(runSearch(m.st, m.seq, "spéciale", store.SortAuto))
 	if m.query != "spéciale" || m.matches != 5 {
 		t.Errorf("réponse courante non appliquée: %q, %d", m.query, m.matches)
 	}
@@ -225,5 +225,20 @@ func TestSplitResize(t *testing.T) {
 	m.Update(tea.MouseMsg{X: 5, Y: 8, Button: tea.MouseButtonWheelDown})
 	if m.cursor <= before {
 		t.Errorf("molette liste: curseur %d → %d", before, m.cursor)
+	}
+}
+
+func TestSortCycle(t *testing.T) {
+	m := navUI(t, 30)
+	if m.sort != store.SortAuto {
+		t.Fatalf("tri initial: %v", m.sort)
+	}
+	press(m, "ctrl+o")
+	if m.sort != store.SortDate {
+		t.Errorf("après 1 Ctrl-O: %v", m.sort)
+	}
+	press(m, "ctrl+o", "ctrl+o")
+	if m.sort != store.SortAuto {
+		t.Errorf("le cycle ne revient pas au départ: %v", m.sort)
 	}
 }

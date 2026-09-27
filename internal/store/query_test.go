@@ -340,3 +340,32 @@ func TestLoadWatchlist(t *testing.T) {
 		t.Errorf("fichier absent mal géré: %d (%v)", n, err)
 	}
 }
+
+func TestSortModes(t *testing.T) {
+	st, err := Open(t.TempDir() + "/sort.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	day := func(d int) time.Time { return time.Date(2026, 1, d, 0, 0, 0, 0, time.UTC) }
+	_, err = st.Upsert([]model.Advisory{
+		{ID: "o:1", Source: "osv", ExternalID: "A", Title: "ancien critique", Severity: "CRITICAL", Published: day(1)},
+		{ID: "o:2", Source: "osv", ExternalID: "B", Title: "recent faible", Severity: "LOW", Published: day(9)},
+		{ID: "o:3", Source: "osv", ExternalID: "C", Title: "moyen", Severity: "MEDIUM", Published: day(5)},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	byDate, _ := st.SearchPageSorted("", SortDate, 0, 10)
+	if byDate[0].ExternalID != "B" || byDate[2].ExternalID != "A" {
+		t.Errorf("tri date: %s,%s,%s", byDate[0].ExternalID, byDate[1].ExternalID, byDate[2].ExternalID)
+	}
+	bySev, _ := st.SearchPageSorted("", SortSeverity, 0, 10)
+	if bySev[0].ExternalID != "A" || bySev[2].ExternalID != "B" {
+		t.Errorf("tri criticité: %s,%s,%s", bySev[0].ExternalID, bySev[1].ExternalID, bySev[2].ExternalID)
+	}
+	if SortLabel(SortSeverity) != "criticité" || SortLabel(SortAuto) != "pertinence" {
+		t.Errorf("SortLabel incorrect")
+	}
+}

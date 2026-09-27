@@ -163,7 +163,7 @@ func (m *ui) statusView(w int) string {
 	case m.zoom:
 		items = []kv{{"↑↓ pgup pgdn", "défiler"}, {"entrée esc", "revenir à la liste"}, {"? ", "aide"}}
 	default:
-		items = []kv{{"↑↓", "naviguer"}, {"tab", "liste/détail"}, {"^←→", "largeur"},
+		items = []kv{{"↑↓", "naviguer"}, {"tab", "liste/détail"}, {"^o", "tri"}, {"^←→", "largeur"},
 			{"entrée", "fiche"}, {"^g", "n°"}, {"?", "aide"}, {"esc", "quitter"}}
 	}
 	var parts []string
@@ -228,9 +228,9 @@ func (m *ui) listPanel(w, h int) string {
 	if rest := m.matches - (m.top + m.listH); rest > 0 {
 		footer = sty.faint.Render(fmt.Sprintf("%s autres ↓", fmtInt(rest)))
 	}
-	right := ""
+	right := sty.faint.Render("tri " + store.SortLabel(m.sort))
 	if m.matches > 0 {
-		right = sty.faint.Render(fmtInt(m.cursor+1) + " / " + fmtInt(m.matches))
+		right += sty.faint.Render("  ·  " + fmtInt(m.cursor+1) + " / " + fmtInt(m.matches))
 	}
 	return panel(w, h, !m.detFocus, "RÉSULTATS", right, rows, footer)
 }
