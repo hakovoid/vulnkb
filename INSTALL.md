@@ -96,7 +96,15 @@ Lance `./vulnkb` (ou `./vulnkb tui`).
 | `Backspace`   | efface un caractère de la recherche           |
 | `↑` / `↓`     | naviguer dans la liste (ou faire défiler le détail) |
 | `Tab`         | basculer le focus entre la liste et le détail |
-| `Esc` / `Ctrl-C` | quitter                                    |
+| `?`           | aide : légende des couleurs et glossaire (CVE, GHSA, CWE, CVSS…) |
+| `Esc` / `Ctrl-C` | quitter (`Esc` ferme d'abord l'aide)       |
+
+Chaque ligne de la liste montre, de gauche à droite : un `●` rouge si la
+faille est exploitée activement (son CVE figure au catalogue CISA KEV), la
+sévérité en couleur (`CRIT`, `HIGH`, `MED`, `LOW`), la source (`KEV`, `OSV`,
+`FR`, `IA`), l'identifiant et le titre. Quand une source ne fournit qu'un
+vecteur CVSS 3.x, le score est calculé et affiché dans le détail. Le détail
+donne aussi le nom en clair des CWE courantes.
 
 La recherche porte sur l'identifiant (CVE, GHSA… et leurs alias), le titre, le
 résumé, le composant et le type de faille (CWE pour OSV). Exemples de

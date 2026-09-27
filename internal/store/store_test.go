@@ -89,6 +89,32 @@ func TestUpsertAndSearch(t *testing.T) {
 	}
 }
 
+func TestCVEIndex(t *testing.T) {
+	st, err := Open(t.TempDir() + "/idx.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	_, err = st.Upsert([]model.Advisory{
+		{ID: "certfr:A", Source: "certfr", ExternalID: "CERTFR-2026-AVI-1 (CVE-2026-1111, CVE-2026-2222)", Title: "Avis A", URL: "https://a"},
+		{ID: "certfr:B", Source: "certfr", ExternalID: "CERTFR-2026-AVI-2 (CVE-2026-1111)", Title: "Avis B"},
+		{ID: "osv:X", Source: "osv", ExternalID: "GHSA-x (CVE-2026-3333)"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	idx, err := st.CVEIndex("certfr")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(idx) != 2 || len(idx["CVE-2026-1111"]) != 2 || idx["CVE-2026-2222"][0] != (Ref{"CERTFR-2026-AVI-1", "Avis A", "https://a"}) {
+		t.Errorf("index: %+v", idx)
+	}
+	if _, ok := idx["CVE-2026-3333"]; ok {
+		t.Error("CVE d'une autre source indexé")
+	}
+}
+
 func TestMigrateAddsRemediation(t *testing.T) {
 	path := t.TempDir() + "/old.db"
 	db, err := sql.Open("sqlite3", path)

@@ -5,6 +5,7 @@ package store
 import (
 	"database/sql"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 
@@ -179,6 +180,40 @@ ORDER BY rank LIMIT ?`, ftsQuery(query), limit)
 	defer rows.Close()
 	return scan(rows)
 }
+
+// Ref désigne brièvement une entrée, pour les renvois entre sources.
+type Ref struct {
+	ID    string // identifiant principal, sans les alias
+	Title string
+	URL   string
+}
+
+var cveRe = regexp.MustCompile(`CVE-\d{4}-\d{4,}`)
+
+// CVEIndex associe chaque CVE cité dans les identifiants d'une source aux
+// entrées de cette source qui le mentionnent.
+func (s *Store) CVEIndex(source string) (map[string][]Ref, error) {
+	rows, err := s.db.Query(`SELECT external_id, title, url FROM advisories WHERE source = ?`, source)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	idx := map[string][]Ref{}
+	for rows.Next() {
+		var ext, title, u string
+		if err := rows.Scan(&ext, &title, &u); err != nil {
+			return nil, err
+		}
+		ref := Ref{ID: strings.Fields(ext + " ")[0], Title: title, URL: u}
+		for _, c := range cveRe.FindAllString(ext, -1) {
+			idx[c] = append(idx[c], ref)
+		}
+	}
+	return idx, rows.Err()
+}
+
+// CVEs renvoie les identifiants CVE présents dans une chaîne.
+func CVEs(s string) []string { return cveRe.FindAllString(s, -1) }
 
 // Count renvoie le nombre total d'entrées stockées.
 func (s *Store) Count() (int, error) {

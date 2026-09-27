@@ -21,14 +21,14 @@ import (
 
 // séquences ANSI
 const (
-	clear    = "\x1b[2J\x1b[H"
-	reset    = "\x1b[0m"
-	bold     = "\x1b[1m"
-	dim      = "\x1b[2m"
-	reverse  = "\x1b[7m"
-	cyan     = "\x1b[36m"
-	hideCur  = "\x1b[?25l"
-	showCur  = "\x1b[?25h"
+	clear   = "\x1b[2J\x1b[H"
+	reset   = "\x1b[0m"
+	bold    = "\x1b[1m"
+	dim     = "\x1b[2m"
+	reverse = "\x1b[7m"
+	cyan    = "\x1b[36m"
+	hideCur = "\x1b[?25l"
+	showCur = "\x1b[?25h"
 )
 
 type ui struct {
@@ -41,6 +41,10 @@ type ui struct {
 	total    int
 	detFocus bool
 	detScr   int
+	help     bool
+	helpScr  int
+	kev      map[string][]store.Ref // CVE -> entrées CISA KEV
+	certfr   map[string][]store.Ref // CVE -> avis CERT-FR
 }
 
 // Run lance la boucle interactive et rend la main à la sortie (esc/ctrl+c).
@@ -53,6 +57,8 @@ func Run(st *store.Store) error {
 
 	u := &ui{st: st}
 	u.total, _ = st.Count()
+	u.kev, _ = st.CVEIndex("cisa-kev")
+	u.certfr, _ = st.CVEIndex("certfr")
 	u.rows, u.cols = termSize()
 	u.reload()
 
@@ -85,10 +91,26 @@ func (u *ui) reload() {
 
 // handle traite une saisie clavier et renvoie true s'il faut quitter.
 func (u *ui) handle(b []byte) bool {
+	if len(b) == 1 && b[0] == 3 { // ctrl+c
+		return true
+	}
+	if u.help {
+		switch {
+		case len(b) == 1 && (b[0] == 27 || b[0] == '?' || b[0] == 'q'):
+			u.help = false
+		case len(b) >= 3 && b[0] == 27 && b[1] == '[' && b[2] == 'A':
+			u.helpScr = maxi(0, u.helpScr-1)
+		case len(b) >= 3 && b[0] == 27 && b[1] == '[' && b[2] == 'B':
+			u.helpScr++
+		}
+		return false
+	}
+
 	// touches spéciales
 	switch {
-	case len(b) == 1 && (b[0] == 3 || b[0] == 27 && false): // ctrl+c
-		return true
+	case len(b) == 1 && b[0] == '?':
+		u.help, u.helpScr = true, 0
+		return false
 	case len(b) == 1 && b[0] == 27: // esc seul
 		return true
 	case b[0] == 27 && len(b) >= 3 && b[1] == '[': // séquence flèche
@@ -157,17 +179,78 @@ func (u *ui) render() {
 	b.WriteString(focusMark + "recherche: " + bold + string(u.query) + reset + "_\r\n")
 	b.WriteString(strings.Repeat("─", maxi(1, u.cols)) + "\r\n")
 
+	bodyRows := maxi(4, u.rows-4)
+	if u.help {
+		u.renderHelp(&b, bodyRows)
+		b.WriteString(dim + "↑/↓ défiler · ? ou esc fermer l'aide" + reset)
+		fmt.Print(b.String())
+		return
+	}
+
 	// zones : liste (moitié haute) / détail (moitié basse)
-	bodyRows := maxi(4, u.rows-5)
-	listRows := bodyRows / 2
-	detRows := bodyRows - listRows
+	listRows := (bodyRows - 1) / 2
+	detRows := bodyRows - 1 - listRows
 
 	u.renderList(&b, listRows)
 	b.WriteString(dim + strings.Repeat("┈", maxi(1, u.cols)) + reset + "\r\n")
 	u.renderDetail(&b, detRows)
 
-	b.WriteString(dim + "↑/↓ naviguer · tab liste/détail · taper pour filtrer · esc quitter" + reset)
+	b.WriteString(dim + "↑/↓ naviguer · tab liste/détail · taper pour filtrer · ? aide · esc quitter" + reset)
 	fmt.Print(b.String())
+}
+
+func (u *ui) renderHelp(b *strings.Builder, h int) {
+	var lines []string
+	for _, l := range helpText {
+		if visibleLen(l) <= u.cols {
+			lines = append(lines, l) // garde l'alignement des colonnes
+		} else {
+			lines = append(lines, wrapLines(l, u.cols)...)
+		}
+	}
+	u.helpScr = minInt(u.helpScr, maxi(0, len(lines)-h))
+	printed := 0
+	for _, l := range lines[u.helpScr:] {
+		if printed >= h {
+			break
+		}
+		b.WriteString(l + "\r\n")
+		printed++
+	}
+	for ; printed < h; printed++ {
+		b.WriteString("\r\n")
+	}
+}
+
+// exploited indique si l'entrée, ou l'un de ses CVE, figure au catalogue KEV.
+func (u *ui) exploited(a model.Advisory) bool {
+	if a.Source == "cisa-kev" {
+		return true
+	}
+	for _, c := range store.CVEs(a.ExternalID) {
+		if len(u.kev[c]) > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+// certfrRefs renvoie les avis CERT-FR qui citent un CVE de l'entrée.
+func (u *ui) certfrRefs(a model.Advisory) []store.Ref {
+	if a.Source == "certfr" {
+		return nil
+	}
+	seen := map[string]bool{}
+	var out []store.Ref
+	for _, c := range store.CVEs(a.ExternalID) {
+		for _, r := range u.certfr[c] {
+			if !seen[r.ID] {
+				seen[r.ID] = true
+				out = append(out, r)
+			}
+		}
+	}
+	return out
 }
 
 func (u *ui) renderList(b *strings.Builder, h int) {
@@ -185,16 +268,26 @@ func (u *ui) renderList(b *strings.Builder, h int) {
 	printed := 0
 	for i := start; i < len(u.results) && printed < h; i++ {
 		a := u.results[i]
-		id := a.ExternalID
+		id := primaryID(a.ExternalID)
 		if id == "" {
 			id = a.Source
 		}
-		line := fmt.Sprintf(" %-16s %s", trunc(id, 16), a.Title)
-		line = trunc(line, u.cols)
-		if i == u.cursor {
-			b.WriteString(reverse + fmt.Sprintf("%-*s", u.cols, line) + reset + "\r\n")
+		mark := " "
+		if u.exploited(a) {
+			mark = "●"
+		}
+		sev := parseSeverity(a.Severity)
+		src := sourceOf(a.Source)
+		title := strings.ReplaceAll(a.Title, "\n", " ")
+		idCol := fmt.Sprintf("%-20s", trunc(id, 20))
+
+		if i == u.cursor { // ligne sélectionnée : vidéo inverse, sans couleurs
+			line := trunc(fmt.Sprintf(" %s %s %s %s %s", mark, sev.short(), src.badge, idCol, title), u.cols)
+			b.WriteString(reverse + line + strings.Repeat(" ", maxi(0, u.cols-visibleLen(line))) + reset + "\r\n")
 		} else {
-			b.WriteString(line + "\r\n")
+			line := fmt.Sprintf(" %s %s %s %s %s",
+				boldRed+mark+reset, sev.color()+sev.short()+reset, src.color+src.badge+reset, idCol, title)
+			b.WriteString(trunc(line, u.cols) + reset + "\r\n")
 		}
 		printed++
 	}
@@ -222,22 +315,34 @@ func (u *ui) renderDetail(b *strings.Builder, h int) {
 	lines = append(lines, wrapLines(bold+a.Title+reset, u.cols)...)
 	lines = append(lines, "")
 	add("ID", a.ExternalID)
-	add("Source", a.Source)
+	src := sourceOf(a.Source)
+	add("Source", src.color+src.name+reset)
+	if u.exploited(a) {
+		add("Exploitation", boldRed+"exploitée activement (catalogue CISA KEV)"+reset)
+	}
+	if sev := parseSeverity(a.Severity); sev.level > 0 {
+		txt := sev.color() + sev.label() + reset
+		if sev.score != "" {
+			txt += dim + " · CVSS " + sev.score + " (" + a.Severity + ")" + reset
+		}
+		add("Sévérité", txt)
+	} else if a.Source != "cisa-kev" {
+		add("Sévérité", a.Severity)
+	}
 	add("Composant", a.Component)
-	add("Type", a.VulnType)
-	add("Sévérité", a.Severity)
+	add("Type", describeCWEs(a.VulnType))
 	add("Versions affectées", a.AffectedVersions)
 	add("Corrigé dans", a.FixedVersions)
+	add("Remédiation", a.Remediation)
 	if !a.Published.IsZero() {
 		add("Publié", a.Published.Format("2006-01-02"))
 	}
+	for _, r := range u.certfrRefs(a) {
+		add("Avis CERT-FR", blue+r.ID+reset+" "+r.Title+dim+" "+r.URL+reset)
+	}
 	if a.Summary != "" {
 		lines = append(lines, "")
-		lines = append(lines, wrapLines(a.Summary, u.cols)...)
-	}
-	if strings.TrimSpace(a.Remediation) != "" {
-		lines = append(lines, "", cyan+"Remédiation:"+reset)
-		lines = append(lines, wrapLines(a.Remediation, u.cols)...)
+		lines = append(lines, wrapLines(cleanMarkdown(a.Summary), u.cols)...)
 	}
 	if len(a.References) > 0 {
 		lines = append(lines, "", cyan+"Références:"+reset)

@@ -1,0 +1,71 @@
+package tui
+
+import (
+	"strings"
+	"testing"
+)
+
+func TestCVSS3Score(t *testing.T) {
+	cases := map[string]float64{
+		"CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H": 9.8,
+		"CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:C/C:L/I:L/A:N": 6.1,
+		"CVSS:3.0/AV:N/AC:L/PR:N/UI:N/S:C/C:H/I:H/A:H": 10.0,
+		"CVSS:3.1/AV:L/AC:L/PR:L/UI:N/S:U/C:H/I:H/A:H": 7.8,
+		"CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:L/I:N/A:N": 3.7,
+		"CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:N": 0,
+	}
+	for v, want := range cases {
+		got, ok := cvss3Score(v)
+		if !ok || got != want {
+			t.Errorf("%s: obtenu %.1f (%v), attendu %.1f", v, got, ok, want)
+		}
+	}
+	for _, bad := range []string{"CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N", "CVSS:3.1/AV:X/AC:L", "HIGH", ""} {
+		if _, ok := cvss3Score(bad); ok {
+			t.Errorf("%q: vecteur invalide accepté", bad)
+		}
+	}
+}
+
+func TestParseSeverity(t *testing.T) {
+	cases := map[string]severity{
+		"CRITICAL":        {level: 4},
+		"Critical":        {level: 4},
+		"MODERATE":        {level: 2},
+		"LOW":             {level: 1},
+		"Known Exploited": {level: 0},
+		"CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H": {level: 4, score: "9.8"},
+	}
+	for raw, want := range cases {
+		if got := parseSeverity(raw); got != want {
+			t.Errorf("%q: obtenu %+v, attendu %+v", raw, got, want)
+		}
+	}
+}
+
+func TestCleanMarkdown(t *testing.T) {
+	in := "### Impact\r\nA **stored** XSS in `render()`.\n\n\n\n- see [the fix](https://x.test/fix)\n* <b>version</b> <= 1.2\n```go\ncode()\n```\n[https://a.test](https://a.test)"
+	got := cleanMarkdown(in)
+	for _, want := range []string{bold + "Impact" + reset, "A stored XSS in render().", "• see the fix (https://x.test/fix)", "• version <= 1.2", "code()", "https://a.test"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("sortie sans %q:\n%s", want, got)
+		}
+	}
+	for _, unwanted := range []string{"###", "**", "`", "<b>", "\n\n\n", "](", "\r"} {
+		if strings.Contains(got, unwanted) {
+			t.Errorf("sortie contient %q:\n%s", unwanted, got)
+		}
+	}
+}
+
+func TestDescribeCWEsAndPrimaryID(t *testing.T) {
+	if got := describeCWEs("CWE-79, CWE-99999"); got != "CWE-79 (XSS, injection de script dans la page), CWE-99999" {
+		t.Errorf("describeCWEs: %q", got)
+	}
+	if got := primaryID("GHSA-22fx-6r9m-r8h9 (CVE-2023-29659)"); got != "GHSA-22fx-6r9m-r8h9" {
+		t.Errorf("primaryID: %q", got)
+	}
+	if got := primaryID("CVE-2026-1"); got != "CVE-2026-1" {
+		t.Errorf("primaryID sans alias: %q", got)
+	}
+}
