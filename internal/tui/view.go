@@ -90,6 +90,9 @@ func (m *ui) View() string {
 
 	g := m.geometry()
 	switch {
+	case m.srcView:
+		parts = append(parts, m.overlayView(w, max(6, m.height-headerH-searchH-statusH), "SOURCES", m.srcLines,
+			"┄ ↑↓ défiler · alt+s ou esc pour fermer"))
 	case m.help:
 		parts = append(parts, m.helpView(w, max(6, m.height-headerH-searchH-statusH)))
 	case g.listW == 0:
@@ -135,7 +138,7 @@ func (m *ui) headerView(w int) string {
 
 func (m *ui) searchView(w int) string {
 	box := sty.search
-	if m.detFocus || m.zoom || m.help {
+	if m.detFocus || m.zoom || m.help || m.srcView {
 		box = sty.searchIdle
 	}
 	inner := w - 4
@@ -158,6 +161,8 @@ func (m *ui) statusView(w int) string {
 	type kv struct{ k, v string }
 	var items []kv
 	switch {
+	case m.srcView:
+		items = []kv{{"↑↓", "défiler"}, {"alt+s esc", "fermer"}}
 	case m.help:
 		items = []kv{{"↑↓", "défiler"}, {"? esc", "fermer l'aide"}}
 	case m.gotoMode:
@@ -275,7 +280,14 @@ func (m *ui) listRow(a model.Advisory, selected bool, w int) string {
 	badge := sevBadge(effectiveSeverity(a).level)
 
 	line := bar + mark + seg(bg, " ") + idCell + seg(bg, " ") + badge + seg(bg, " ")
-	if showSrc {
+	switch {
+	case m.sort == store.SortEPSS && w >= 40:
+		e := "—"
+		if a.EPSS > 0 {
+			e = fmtPct(a.EPSS)
+		}
+		line += seg(lipgloss.NewStyle().Foreground(lipgloss.Color(epssHex(a.EPSS))).Width(7).Align(lipgloss.Right), e) + seg(bg, "  ")
+	case showSrc:
 		src := sourceOf(a.Source)
 		line += seg(sty.faint.Width(4), strings.TrimSpace(src.badge)) + seg(bg, " ")
 	}
@@ -313,16 +325,19 @@ func (m *ui) detailPanel(w, h int) string {
 // avec le lien le plus utile. Vide si rien d'actionnable n'est connu.
 func (m *ui) actionLines(a model.Advisory, w int) []string {
 	var body []string
-	if m.exploited(a) {
+	switch {
+	case m.exploited(a):
 		body = append(body, boldRed+"⚠ exploitée activement — à corriger en priorité"+reset)
-	} else if n := len(m.exploitsFor(a)); n > 0 {
+	case len(m.exploitsFor(a)) > 0:
 		body = append(body, magenta+"⚑ exploit public disponible — à traiter en priorité"+reset)
+	case a.EPSS >= 0.1:
+		body = append(body, orange+"⚑ forte probabilité d'exploitation (EPSS "+fmtPct(a.EPSS)+") — à traiter en priorité"+reset)
 	}
 	switch {
 	case a.FixedVersions != "":
 		body = append(body, wrapLines(sty.green.Render("↑ mettre à jour : ")+a.FixedVersions, w)...)
 	case strings.TrimSpace(shortRemediation(a.Remediation)) != "":
-		body = append(body, wrapLines(sty.accent.Render("→ ")+shortRemediation(a.Remediation), w)...)
+		body = append(body, wrapLines(sty.accent.Render("→ ")+oneLine(shortRemediation(a.Remediation)), w)...)
 	default:
 		body = append(body, sty.muted.Render("Pas de correctif indiqué — voir les références ci-dessous."))
 	}
@@ -382,6 +397,9 @@ func (m *ui) detailLines(a model.Advisory, w int) []string {
 	if a.NVD.CVE != "" {
 		kv("CVSS (NVD)", describeNVD(a.NVD, len(store.CVEs(a.ExternalID))))
 	}
+	if a.EPSS > 0 {
+		kv("EPSS", describeEPSS(a.EPSS, a.EPSSPercentile))
+	}
 	kv("Composant", a.Component)
 	if a.VulnType == "" && a.NVD.CWE != "" {
 		kv("Type", describeCWEs(a.NVD.CWE)+dim+" (NVD)"+reset)
@@ -392,7 +410,7 @@ func (m *ui) detailLines(a model.Advisory, w int) []string {
 	if a.FixedVersions != "" {
 		kv("Corrigé dans", sty.green.Render(a.FixedVersions))
 	}
-	kv("Remédiation", shortRemediation(a.Remediation))
+	kv("Remédiation", oneLine(shortRemediation(a.Remediation)))
 	if !a.Published.IsZero() {
 		kv("Publié", a.Published.Format("2006-01-02"))
 	}
@@ -474,4 +492,36 @@ func colorHelpKey(l string) string {
 		return l
 	}
 	return "  " + sty.key.Render(m[1]) + m[2] + m[3]
+}
+
+// overlayView affiche une fenêtre centrée défilante (sources…).
+func (m *ui) overlayView(w, h int, title string, content []string, footer string) string {
+	boxW := min(104, w)
+	innerW := boxW - 4
+	var lines []string
+	for _, l := range content {
+		if visibleLen(l) <= innerW {
+			lines = append(lines, l)
+		} else {
+			lines = append(lines, wrapLines(l, innerW)...)
+		}
+	}
+	rows := max(1, h-2-3)
+	m.helpScr = max(0, min(m.helpScr, len(lines)-rows))
+	box := panel(boxW, h, true, title, "", lines[m.helpScr:], sty.faint.Render(footer))
+	return lipgloss.PlaceHorizontal(w, lipgloss.Center, box)
+}
+
+// epssHex donne la couleur de palette d'une probabilité EPSS (liste).
+func epssHex(p float64) string {
+	switch {
+	case p >= 0.5:
+		return pal.red
+	case p >= 0.1:
+		return pal.orange
+	case p >= 0.01:
+		return pal.yellow
+	default:
+		return pal.faint
+	}
 }

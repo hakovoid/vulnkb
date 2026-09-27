@@ -45,4 +45,9 @@ type Advisory struct {
 
 	// Meilleur score NVD parmi les CVE de l'entrée (rempli à la lecture).
 	NVD CVSS
+
+	// Probabilité d'exploitation EPSS du CVE le plus menacé (0 à 1) et son
+	// centile (rempli à la lecture).
+	EPSS           float64
+	EPSSPercentile float64
 }

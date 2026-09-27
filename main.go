@@ -22,6 +22,7 @@ import (
 	"strings"
 	"time"
 
+	"vulnkb/internal/epss"
 	"vulnkb/internal/exploits"
 	"vulnkb/internal/extract"
 	"vulnkb/internal/glossary"
@@ -67,15 +68,9 @@ func run() error {
 	case "theme", "theme:":
 		return themeCmd(st, args)
 	case "sources":
-		for _, s := range source.All() {
-			if source.IsOptional(s) {
-				fmt.Printf("%s  (à la demande : vulnkb sync %s)\n", s.Name(), s.Name())
-			} else {
-				fmt.Println(s.Name())
-			}
+		for _, l := range tui.SourceReport(st) {
+			fmt.Println(l)
 		}
-		fmt.Println("nvd  (tous les CVE et leurs scores CVSS ; complète la sévérité des autres sources)")
-		fmt.Println("exploits  (exploits et PoC publics : Exploit-DB, Metasploit, dépôts GitHub)")
 		return nil
 	case "add":
 		return add(st, args)
@@ -135,6 +130,11 @@ func info(st *store.Store) error {
 	}
 	fmt.Printf("\nScores CVSS (NVD) : %s\n", groupInt(nvd))
 	fmt.Printf("Exploits publics  : %s références\n", groupInt(expl))
+	if n, _ := st.CountEPSS(); n > 0 {
+		d, _ := st.Meta("epss_date")
+		t, _ := time.Parse(time.RFC3339, d)
+		fmt.Printf("Scores EPSS       : %s (du %s)\n", groupInt(n), t.Format("2006-01-02"))
+	}
 	if last.IsZero() {
 		fmt.Println("\nJamais synchronisé — lance : vulnkb sync")
 	} else {
@@ -316,7 +316,7 @@ func envOr(key, def string) string {
 func sync(st *store.Store, names []string) error {
 	var srcs []source.Source
 	all := len(names) == 0
-	withNVD, withExploits := all, all
+	withNVD, withExploits, withEPSS := all, all, all
 	if !all {
 		for _, n := range names {
 			switch n {
@@ -324,6 +324,8 @@ func sync(st *store.Store, names []string) error {
 				withNVD = true
 			case "exploits", "exploit":
 				withExploits = true
+			case "epss":
+				withEPSS = true
 			default:
 				s, ok := source.Get(n)
 				if !ok {
@@ -373,6 +375,9 @@ func sync(st *store.Store, names []string) error {
 	if withExploits {
 		syncExploits(st)
 	}
+	if withEPSS {
+		syncEPSS(st)
+	}
 	fmt.Print("→ recoupements entre sources… ")
 	if err := st.RefreshDerived(); err != nil {
 		fmt.Printf("échec: %v\n", err)
@@ -383,6 +388,24 @@ func sync(st *store.Store, names []string) error {
 	shown, _ := st.CountMatches("")
 	fmt.Printf("base: %d entrées au total, dont %d affichées par défaut\n", total, shown)
 	return nil
+}
+
+// syncEPSS collecte les probabilités d'exploitation EPSS du jour.
+func syncEPSS(st *store.Store) {
+	fmt.Print("→ epss (probabilités d'exploitation)… ")
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+	start := time.Now()
+	scores, date, err := epss.Fetch(ctx, &http.Client{}, epss.FeedURL)
+	if err != nil {
+		fmt.Printf("échec : %v\n", err)
+		return
+	}
+	if err := st.ReplaceEPSS(scores, date); err != nil {
+		fmt.Printf("écriture : %v\n", err)
+		return
+	}
+	fmt.Printf("%s scores du %s en %s\n", groupInt(len(scores)), date.Format("2006-01-02"), time.Since(start).Round(time.Second))
 }
 
 // syncExploits collecte les exploits publics (Exploit-DB, Metasploit, dépôts

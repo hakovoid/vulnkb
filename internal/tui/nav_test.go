@@ -237,7 +237,7 @@ func TestSortCycle(t *testing.T) {
 	if m.sort != store.SortDate {
 		t.Errorf("après 1 Ctrl-O: %v", m.sort)
 	}
-	press(m, "ctrl+o", "ctrl+o")
+	press(m, "ctrl+o", "ctrl+o", "ctrl+o")
 	if m.sort != store.SortAuto {
 		t.Errorf("le cycle ne revient pas au départ: %v", m.sort)
 	}
@@ -342,5 +342,33 @@ func TestHyperlinks(t *testing.T) {
 	}
 	if got := linkify("(https://x.test/fix)", 80); !strings.HasPrefix(got, "("+osc8+"https://x.test/fix") || !strings.HasSuffix(got, ")") {
 		t.Errorf("linkify parenthèses : %q", got)
+	}
+}
+
+func TestSourcesAndEPSSView(t *testing.T) {
+	m := navUI(t, 10)
+	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("s"), Alt: true})
+	if !m.srcView {
+		t.Fatal("Alt-S n'ouvre pas les sources")
+	}
+	v := stripANSI(m.View())
+	for _, want := range []string{"SOURCES", "Sources en base", "OSV.dev", "10", "Noms pour", "osv-npm", "epss"} {
+		if !strings.Contains(v, want) {
+			t.Errorf("fenêtre des sources sans %q", want)
+		}
+	}
+	press(m, "esc")
+	if m.srcView {
+		t.Error("Esc ne ferme pas les sources")
+	}
+	a := model.Advisory{ID: "x", Title: "t", EPSS: 0.942, EPSSPercentile: 0.998}
+	got := stripANSI(strings.Join(m.detailLines(a, 100), "\n"))
+	for _, want := range []string{"EPSS", "94 % de probabilité", "forte probabilité d'exploitation"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("fiche sans %q:\n%s", want, got)
+		}
+	}
+	if fmtPct(0.0004) != "0,04 %" || fmtPct(0.032) != "3,2 %" {
+		t.Errorf("fmtPct: %q %q", fmtPct(0.0004), fmtPct(0.032))
 	}
 }

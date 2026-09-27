@@ -98,6 +98,14 @@ Sources disponibles :
   à prioriser. Dans la TUI, le filtre `exploit` isole ces entrées et la fiche
   liste les liens ; combinable, par exemple `mes exploit sev:high+`.
 
+- `epss` : probabilité EPSS, publiée chaque jour par le FIRST, qu'un CVE
+  soit exploité dans les 30 jours (~380 000 CVE, une dizaine de secondes).
+  Le CVSS dit la gravité si la faille est exploitée, l'EPSS la probabilité
+  qu'elle le soit. Une fiche prend le score de son CVE le plus menacé ; elle
+  l'affiche avec son centile, « Que faire » signale une probabilité d'au moins
+  10 %, et la liste se trie par EPSS (`Alt-O`, colonne dédiée) ou se filtre
+  (`epss:10`). Combinaison utile : `mes epss:10`.
+
 Ordre de grandeur : un premier `sync` complet prend environ 2 minutes sur une
 bonne connexion, pour environ 410 000 entrées (dont 384 000 affichées) et une
 base d'environ 1 Go, dont 800 Mo pour NVD.
@@ -191,6 +199,7 @@ Des filtres se combinent au texte :
 | `src:kev` | une source (`kev`, `osv`, `fr`, `nvd`, `ia`) ; `src:kev,fr` pour plusieurs |
 | `exploitee` | failles exploitées activement : CVE présent dans CISA KEV, toutes sources confondues |
 | `exploit` | un exploit ou une preuve de concept public existe (Exploit-DB, Metasploit, GitHub) |
+| `epss:10` | probabilité d'exploitation EPSS d'au moins 10 % (`epss:1`, `epss:50`…) |
 | `mes` | seulement les produits de ta liste de surveillance (voir ci-dessous) |
 
 Exemples : `nginx sev:high+ src:osv`, `exploitee src:fr`, `sev:crit gitea`,

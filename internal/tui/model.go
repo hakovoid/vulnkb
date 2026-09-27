@@ -46,6 +46,8 @@ type ui struct {
 	zoom     bool       // Entrée : fiche en plein écran
 	help     bool
 	helpScr  int
+	srcView  bool     // fenêtre des sources (Alt-S)
+	srcLines []string // contenu de la fenêtre des sources
 	gotoMode bool
 	gotoBuf  string
 	theme    string // thème de couleurs courant
@@ -271,6 +273,14 @@ func (m *ui) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 // handleMouse gère la molette (défilement) et le glissé sur la séparation des
 // panneaux (redimensionnement).
 func (m *ui) handleMouse(e tea.MouseMsg) {
+	if m.srcView {
+		if e.Button == tea.MouseButtonWheelUp {
+			m.helpScr = max(0, m.helpScr-3)
+		} else if e.Button == tea.MouseButtonWheelDown {
+			m.helpScr += 3
+		}
+		return
+	}
 	if m.help || m.zoom {
 		if e.Button == tea.MouseButtonWheelUp {
 			m.detail.LineUp(3)
@@ -343,6 +353,16 @@ func (m *ui) handleKey(k tea.KeyMsg) tea.Cmd {
 		return tea.Quit
 	}
 	switch {
+	case m.srcView:
+		switch key {
+		case "esc", "alt+s", "q":
+			m.srcView = false
+		case "up":
+			m.helpScr = max(0, m.helpScr-1)
+		case "down":
+			m.helpScr++
+		}
+		return nil
 	case m.help:
 		m.helpKey(key)
 		return nil
@@ -361,6 +381,9 @@ func (m *ui) handleKey(k tea.KeyMsg) tea.Cmd {
 		return tea.Quit
 	case "?":
 		m.help, m.helpScr = true, 0
+		return nil
+	case "alt+s":
+		m.srcView, m.helpScr, m.srcLines = true, 0, SourceReport(m.st)
 		return nil
 	case "ctrl+g":
 		m.gotoMode, m.gotoBuf = true, ""
@@ -382,7 +405,7 @@ func (m *ui) handleKey(k tea.KeyMsg) tea.Cmd {
 		m.setSplit(m.splitPct + 4)
 		return nil
 	case "ctrl+o":
-		m.sort = (m.sort + 1) % 3 // pertinence → date → criticité
+		m.sort = store.NextSort(m.sort) // pertinence → date → criticité → EPSS
 		return m.searchCmd()
 	case "ctrl+y":
 		m.cycleTheme()

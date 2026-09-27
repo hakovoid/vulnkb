@@ -19,7 +19,7 @@ plein-texte.
 go mod tidy                                   # dépendances (une fois)
 CGO_ENABLED=1 go build -tags sqlite_fts5 -o vulnkb .   # compile
 
-./vulnkb sources         # liste les sources disponibles
+./vulnkb sources         # sources : contenu, entrées, dernière collecte (Alt-S dans la TUI)
 ./vulnkb sync            # collecte les sources par défaut dans la base
 ./vulnkb sync osv-npm    # collecte une source précise
 ./vulnkb watch add nginx # suit un produit (filtre « mes », Ctrl-T dans la TUI)
@@ -41,6 +41,7 @@ CGO_ENABLED=1 go build -tags sqlite_fts5 -o vulnkb .   # compile
 | `certfr` | avis et alertes du CERT-FR (ANSSI), **en français** : systèmes affectés, risques, solution, CVE | oui |
 | `nvd` | tous les CVE de la base NVD (NIST) : description, produits et versions (CPE), CWE, score CVSS. Les scores complètent la sévérité des autres sources ; un CVE déjà décrit ailleurs est masqué côté NVD (sauf `src:nvd`) | oui |
 | `exploits` | exploits et PoC publics par CVE (Exploit-DB, Metasploit, GitHub) : marqueur et filtre `exploit`, liens dans la fiche | oui |
+| `epss` | probabilité EPSS (FIRST) qu'un CVE soit exploité dans les 30 jours, mise à jour chaque jour : ligne dans la fiche, filtre `epss:10`, tri par EPSS | oui |
 
 `certfr` couvre les 3 dernières années par défaut (`VULNKB_CERTFR_DAYS` pour
 la profondeur) ; les synchros suivantes ne récupèrent que les bulletins

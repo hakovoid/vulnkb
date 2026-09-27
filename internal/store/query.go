@@ -3,6 +3,7 @@ package store
 import (
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 
 	"vulnkb/internal/model"
@@ -18,12 +19,16 @@ import (
 //	sev:high+           ou plus
 //	src:kev             source (kev, osv, fr, ia) ; plusieurs valeurs possibles
 //	exploitee           failles exploitées activement (CVE présent dans CISA KEV)
+//	exploit             un exploit public existe
+//	epss:10             probabilité d'exploitation EPSS d'au moins 10 %
+//	mes                 produits de la liste de surveillance
 type Query struct {
 	Text       string
 	Severities []int    // niveaux model.Sev*
 	Sources    []string // valeurs de la colonne source
 	Exploited  bool
 	Exploit    bool     // filtre « exploit » : exploit public disponible
+	EPSSMin    float64  // filtre « epss:N » : probabilité EPSS ≥ N % (0 = pas de filtre)
 	Watch      []string // termes de la liste de surveillance (filtre « mes »)
 	WatchReq   bool     // « mes » demandé (même si la liste est vide)
 	Invalid    []string // filtres non reconnus
@@ -59,6 +64,14 @@ func ParseQuery(raw string) Query {
 			q.Exploited = true
 		case !hasColon && (k == "exploit" || k == "exploits" || k == "poc"):
 			q.Exploit = true
+		case hasColon && k == "epss":
+			v := strings.TrimRight(strings.TrimSpace(val), "+%")
+			f, err := strconv.ParseFloat(strings.Replace(v, ",", ".", 1), 64)
+			if err != nil || f <= 0 || f > 100 {
+				q.Invalid = append(q.Invalid, tok)
+				continue
+			}
+			q.EPSSMin = f / 100
 		case !hasColon && (k == "mes" || k == "watch" || k == "surveille" || k == "surveilles"):
 			q.WatchReq = true
 			q.Watch = Watchlist()
@@ -111,7 +124,7 @@ func ParseQuery(raw string) Query {
 
 // HasFilters indique si la requête restreint autre chose que le texte.
 func (q Query) HasFilters() bool {
-	return len(q.Severities) > 0 || len(q.Sources) > 0 || q.Exploited || q.Exploit || q.WatchReq
+	return len(q.Severities) > 0 || len(q.Sources) > 0 || q.Exploited || q.Exploit || q.WatchReq || q.EPSSMin > 0
 }
 
 // Impossible est vrai quand la requête ne peut renvoyer aucun résultat :
@@ -216,6 +229,10 @@ func (q Query) where() (string, []any) {
 	}
 	if q.Exploit {
 		sb.WriteString(" AND a.has_exploit = 1") // tenu à jour par RefreshHasExploit
+	}
+	if q.EPSSMin > 0 {
+		sb.WriteString(" AND a.epss >= ?")
+		args = append(args, q.EPSSMin)
 	}
 	if len(q.Watch) > 0 {
 		clause, wargs := watchClause(q.Watch)

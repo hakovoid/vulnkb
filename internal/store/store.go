@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"vulnkb/internal/epss"
 	"vulnkb/internal/model"
 
 	_ "github.com/mattn/go-sqlite3"
@@ -92,6 +93,13 @@ CREATE TABLE IF NOT EXISTS exploit_refs (
     PRIMARY KEY (cve, url)
 );
 CREATE INDEX IF NOT EXISTS exploit_refs_cve ON exploit_refs(cve);
+
+-- Probabilités d'exploitation EPSS (FIRST), par CVE.
+CREATE TABLE IF NOT EXISTS epss_scores (
+    cve        TEXT PRIMARY KEY,
+    score      REAL NOT NULL,
+    percentile REAL NOT NULL
+);
 `
 
 // bestNVD sélectionne, pour l'entrée « a », le score NVD le plus élevé
@@ -237,11 +245,19 @@ func (s *Store) migrate() error {
 	if err != nil {
 		return err
 	}
+	if _, err := s.addColumnIfMissing("advisories", "epss", "REAL NOT NULL DEFAULT 0"); err != nil {
+		return err
+	}
+	if _, err := s.addColumnIfMissing("advisories", "epss_pct", "REAL NOT NULL DEFAULT 0"); err != nil {
+		return err
+	}
 	if _, err := s.db.Exec(`
 DROP INDEX IF EXISTS advisories_source;
 CREATE INDEX IF NOT EXISTS advisories_source_pub ON advisories(source, published DESC, id);
 CREATE INDEX IF NOT EXISTS advisories_exploited ON advisories(exploited);
-CREATE INDEX IF NOT EXISTS advisories_has_exploit ON advisories(has_exploit);`); err != nil {
+CREATE INDEX IF NOT EXISTS advisories_has_exploit ON advisories(has_exploit);
+DROP INDEX IF EXISTS advisories_epss;
+CREATE INDEX IF NOT EXISTS advisories_shadowed_epss ON advisories(shadowed, epss DESC, id);`); err != nil {
 		return fmt.Errorf("migration index: %w", err)
 	}
 	if _, err := s.db.Exec(`
@@ -475,7 +491,9 @@ ON CONFLICT(id) DO UPDATE SET
 			return n, fmt.Errorf("upsert %s: %w", a.ID, err)
 		}
 		if _, err := tx.Exec(`UPDATE advisories SET eff_level = `+effectiveLevel+`,
-    exploited = (id IN (`+kevLinked+` WHERE c.id = ?)) WHERE id = ?`, a.ID, a.ID); err != nil {
+    exploited = (id IN (`+kevLinked+` WHERE c.id = ?)),
+    epss = COALESCE(`+bestEPSS("score")+`, 0), epss_pct = COALESCE(`+bestEPSS("percentile")+`, 0)
+    WHERE id = ?`, a.ID, a.ID); err != nil {
 			return n, fmt.Errorf("upsert %s: %w", a.ID, err)
 		}
 		n++
@@ -533,7 +551,7 @@ func (s *Store) SearchPageSorted(query string, sort Sort, offset, limit int) ([]
 	rows, err := s.db.Query(`
 SELECT a.id, a.source, a.external_id, a.title, a.summary, a.component, a.vuln_type,
        a.severity, a.affected_versions, a.fixed_versions, a.remediation, a.references_json,
-       a.published, a.fetched, a.url, `+bestNVD+`
+       a.published, a.fetched, a.url, a.epss, a.epss_pct, `+bestNVD+`
 FROM advisories a WHERE a.id IN (`+placeholders(len(ids))+`)`, ids...)
 	if err != nil {
 		return nil, err
@@ -605,6 +623,58 @@ func (s *Store) ReplaceExploits(refs []model.ExploitRef) error {
 }
 
 // CountExploits renvoie le nombre de références d'exploits stockées.
+// bestEPSS renvoie la sous-requête du score (ou du centile) EPSS du CVE le
+// plus menacé de l'entrée « advisories ».
+func bestEPSS(col string) string {
+	return `(SELECT e.` + col + ` FROM advisory_cves c JOIN epss_scores e ON e.cve = c.cve
+    WHERE c.id = advisories.id ORDER BY e.score DESC LIMIT 1)`
+}
+
+// ReplaceEPSS remplace tous les scores EPSS, retient leur date, puis
+// recalcule le score de chaque entrée (celui de son CVE le plus menacé).
+func (s *Store) ReplaceEPSS(scores []epss.Score, date time.Time) error {
+	err := s.inTx(func(tx *sql.Tx) error {
+		if _, err := tx.Exec(`DELETE FROM epss_scores`); err != nil {
+			return err
+		}
+		stmt, err := tx.Prepare(`INSERT OR REPLACE INTO epss_scores (cve, score, percentile) VALUES (?,?,?)`)
+		if err != nil {
+			return err
+		}
+		defer stmt.Close()
+		for _, e := range scores {
+			if _, err := stmt.Exec(e.CVE, e.Score, e.Percentile); err != nil {
+				return fmt.Errorf("EPSS %s: %w", e.CVE, err)
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+	if !date.IsZero() {
+		s.SetMeta("epss_date", date.Format(time.RFC3339))
+	}
+	return s.RefreshEPSS()
+}
+
+// RefreshEPSS recalcule le score EPSS de chaque entrée à partir de ses CVE.
+func (s *Store) RefreshEPSS() error {
+	_, err := s.db.Exec(`
+UPDATE advisories SET epss = 0, epss_pct = 0
+  WHERE epss > 0 AND id NOT IN (SELECT c.id FROM advisory_cves c JOIN epss_scores e ON e.cve = c.cve);
+UPDATE advisories SET epss = ` + bestEPSS("score") + `, epss_pct = ` + bestEPSS("percentile") + `
+  WHERE id IN (SELECT c.id FROM advisory_cves c JOIN epss_scores e ON e.cve = c.cve);`)
+	return err
+}
+
+// CountEPSS renvoie le nombre de CVE dotés d'un score EPSS.
+func (s *Store) CountEPSS() (int, error) {
+	var n int
+	err := s.db.QueryRow(`SELECT COUNT(*) FROM epss_scores`).Scan(&n)
+	return n, err
+}
+
 func (s *Store) CountExploits() (int, error) {
 	var n int
 	err := s.db.QueryRow(`SELECT COUNT(*) FROM exploit_refs`).Scan(&n)
@@ -674,7 +744,12 @@ const (
 	SortAuto     Sort = iota // pertinence si recherche texte, sinon date
 	SortDate                 // date de publication décroissante
 	SortSeverity             // criticité décroissante, puis date
+	SortEPSS                 // probabilité d'exploitation EPSS décroissante
+	sortCount                // nombre de modes (pour les faire défiler)
 )
+
+// NextSort renvoie le mode de tri suivant (en boucle).
+func NextSort(s Sort) Sort { return (s + 1) % sortCount }
 
 // SortLabel nomme un mode de tri pour l'affichage.
 func SortLabel(s Sort) string {
@@ -683,6 +758,8 @@ func SortLabel(s Sort) string {
 		return "date"
 	case SortSeverity:
 		return "criticité"
+	case SortEPSS:
+		return "EPSS"
 	default:
 		return "pertinence"
 	}
@@ -710,6 +787,8 @@ func orderBy(sort Sort, fts bool) string {
 		return `a.published DESC, a.id`
 	case SortSeverity:
 		return `a.eff_level DESC, a.published DESC, a.id`
+	case SortEPSS:
+		return `a.epss DESC, a.eff_level DESC, a.published DESC, a.id`
 	default:
 		if fts {
 			return `f.rank, a.id`
@@ -813,6 +892,34 @@ func (s *Store) DBSize() (int64, error) {
 	return pages * pageSize, nil
 }
 
+// SourceStat résume une source en base.
+type SourceStat struct {
+	Source string
+	Count  int
+	Last   time.Time // collecte la plus récente
+}
+
+// SourceStats renvoie, pour chaque source présente en base, son nombre
+// d'entrées et la date de sa dernière collecte (les plus fournies d'abord).
+func (s *Store) SourceStats() ([]SourceStat, error) {
+	rows, err := s.db.Query(`SELECT source, COUNT(*), MAX(fetched) FROM advisories GROUP BY source ORDER BY 2 DESC`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []SourceStat
+	for rows.Next() {
+		var st SourceStat
+		var last int64
+		if err := rows.Scan(&st.Source, &st.Count, &last); err != nil {
+			return nil, err
+		}
+		st.Last = fromUnix(last)
+		out = append(out, st)
+	}
+	return out, rows.Err()
+}
+
 // CountsBySource renvoie le nombre d'entrées par source.
 func (s *Store) CountsBySource() (map[string]int, error) {
 	rows, err := s.db.Query(`SELECT source, COUNT(*) FROM advisories GROUP BY source ORDER BY 2 DESC`)
@@ -842,7 +949,7 @@ func scan(rows *sql.Rows) ([]model.Advisory, error) {
 		if err := rows.Scan(
 			&a.ID, &a.Source, &a.ExternalID, &a.Title, &a.Summary, &a.Component,
 			&a.VulnType, &a.Severity, &a.AffectedVersions, &a.FixedVersions,
-			&remediation, &refs, &pub, &fetched, &a.URL, &nvd,
+			&remediation, &refs, &pub, &fetched, &a.URL, &a.EPSS, &a.EPSSPercentile, &nvd,
 		); err != nil {
 			return nil, err
 		}

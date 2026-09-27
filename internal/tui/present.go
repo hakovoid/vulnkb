@@ -95,6 +95,42 @@ func containsAny(s string, subs []string) bool {
 	return false
 }
 
+// fmtPct présente une probabilité (0 à 1) en pourcentage français :
+// « 94 % », « 3,2 % », « 0,04 % ».
+func fmtPct(p float64) string {
+	v := p * 100
+	var t string
+	switch {
+	case v >= 10:
+		t = fmt.Sprintf("%.0f", v)
+	case v >= 1:
+		t = fmt.Sprintf("%.1f", v)
+	default:
+		t = fmt.Sprintf("%.2f", v)
+	}
+	return strings.Replace(t, ".", ",", 1) + " %"
+}
+
+// epssColor gradue la couleur d'une probabilité EPSS.
+func epssColor(p float64) string {
+	switch {
+	case p >= 0.5:
+		return red
+	case p >= 0.1:
+		return orange
+	case p >= 0.01:
+		return yellow
+	default:
+		return gray
+	}
+}
+
+// describeEPSS présente le score EPSS d'une entrée pour la fiche.
+func describeEPSS(p, pct float64) string {
+	return bold + epssColor(p) + fmtPct(p) + reset + dim + " de probabilité d'exploitation sous 30 jours · plus menaçant que " +
+		fmtPct(pct) + " des CVE" + reset
+}
+
 // exploitKinds nomme les origines d'exploit dans la fiche.
 var exploitKinds = map[string]string{
 	"msf": "Metasploit", "edb": "Exploit-DB", "poc": "PoC GitHub",
@@ -136,6 +172,9 @@ func describeFilters(q store.Query) string {
 	}
 	if q.Exploit {
 		parts = append(parts, magenta+"exploit public"+reset+dim)
+	}
+	if q.EPSSMin > 0 {
+		parts = append(parts, orange+"EPSS ≥ "+fmtPct(q.EPSSMin)+reset+dim)
 	}
 	if q.WatchReq && len(q.Watch) > 0 {
 		parts = append(parts, sty.accent.Render("surveillés")+dim+fmt.Sprintf(" (%d)", len(q.Watch)))

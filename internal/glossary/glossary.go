@@ -38,7 +38,7 @@ func Sections() []Section {
 		{"Sévérité et scores", []Term{
 			{"CVSS", "Common Vulnerability Scoring System : score de gravité de 0 à 10, calculé à partir d'un vecteur (vecteur d'attaque, complexité, impact…)."},
 			{"CWE", "Common Weakness Enumeration : catégorie de faiblesse logicielle (ex. CWE-79 = injection de script / XSS)."},
-			{"EPSS", "Exploit Prediction Scoring System : probabilité qu'une faille soit exploitée prochainement (non collecté ici, pour mémoire)."},
+			{"EPSS", "Exploit Prediction Scoring System (FIRST) : probabilité qu'un CVE soit exploité dans les 30 jours, recalculée chaque jour. Complète le CVSS : le CVSS mesure la gravité si la faille est exploitée, l'EPSS la probabilité qu'elle le soit. Filtre epss:10, tri par EPSS."},
 			{"PoC", "Proof of Concept : code ou démonstration prouvant qu'une faille est exploitable, sans forcément constituer une attaque complète."},
 			{"0-day", "Faille exploitée avant qu'un correctif n'existe (« jour zéro »)."},
 		}},
