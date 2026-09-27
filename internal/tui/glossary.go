@@ -159,6 +159,7 @@ func helpLines() []string {
 		"  Alt-T / Ctrl-T   activer / couper le filtre « mes » (produits surveillés)",
 		"  Alt-O / Ctrl-O   changer le tri : pertinence → date → criticité → EPSS",
 		"  Alt-Y / Ctrl-Y   changer le thème de couleurs (bleu, rose, vert, cyan, violet, orange)",
+		"  Alt-I            statistiques : sévérités, années, menaces, CWE, ton exposition par produit",
 		"  Alt-S            liste des sources : contenu, nombre d'entrées, dernière collecte",
 		"  Alt-E            exporter la fiche affichée en HTML (dossier ~/vulnkb-exports)",
 		"  Alt-R            exporter en HTML tous les résultats de la recherche (rapport, 1 000 fiches max)",

@@ -46,8 +46,9 @@ type ui struct {
 	zoom     bool       // Entrée : fiche en plein écran
 	help     bool
 	helpScr  int
-	srcView  bool     // fenêtre des sources (Alt-S)
-	srcLines []string // contenu de la fenêtre des sources
+	srcView  bool     // fenêtre des sources (Alt-S) ou des statistiques (Alt-I)
+	srcLines []string // contenu de cette fenêtre
+	srcTitle string   // « SOURCES » ou « STATISTIQUES »
 	gotoMode bool
 	gotoBuf  string
 	theme    string // thème de couleurs courant
@@ -123,6 +124,9 @@ func (m *ui) cycleTheme() {
 	m.st.SetMeta(ThemeMetaKey, m.theme)
 	m.flash = "thème " + m.theme
 }
+
+// statsDone apporte le rapport statistique calculé en arrière-plan.
+type statsDone []string
 
 // exportDone signale la fin d'un export HTML lancé en arrière-plan.
 type exportDone struct {
@@ -265,6 +269,11 @@ func (m *ui) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width, m.height = msg.Width, msg.Height
 		m.layout()
 		return m, nil
+	case statsDone:
+		if m.srcView && m.srcTitle == "STATISTIQUES" {
+			m.srcLines = msg
+		}
+		return m, nil
 	case exportDone:
 		if msg.err != nil {
 			m.flash = "export impossible : " + msg.err.Error()
@@ -375,7 +384,7 @@ func (m *ui) handleKey(k tea.KeyMsg) tea.Cmd {
 	switch {
 	case m.srcView:
 		switch key {
-		case "esc", "alt+s", "q":
+		case "esc", "alt+s", "alt+i", "q":
 			m.srcView = false
 		case "up":
 			m.helpScr = max(0, m.helpScr-1)
@@ -419,8 +428,13 @@ func (m *ui) handleKey(k tea.KeyMsg) tea.Cmd {
 			return path, err
 		})
 	case "alt+s":
-		m.srcView, m.helpScr, m.srcLines = true, 0, SourceReport(m.st)
+		m.srcView, m.helpScr, m.srcTitle, m.srcLines = true, 0, "SOURCES", SourceReport(m.st)
 		return nil
+	case "alt+i":
+		m.srcView, m.helpScr, m.srcTitle = true, 0, "STATISTIQUES"
+		m.srcLines = []string{dim + "calcul des statistiques…" + reset}
+		st := m.st
+		return func() tea.Msg { return statsDone(StatsReport(st)) }
 	case "ctrl+g":
 		m.gotoMode, m.gotoBuf = true, ""
 		return nil

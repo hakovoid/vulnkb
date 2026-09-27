@@ -65,6 +65,11 @@ func run() error {
 		return nil
 	case "info":
 		return info(st)
+	case "stats":
+		for _, l := range tui.StatsReport(st) {
+			fmt.Println(l)
+		}
+		return nil
 	case "export":
 		return exportCmd(st, args)
 	case "theme", "theme:":

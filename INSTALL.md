@@ -137,6 +137,7 @@ Lance `./vulnkb` (ou `./vulnkb tui`).
 | `Alt-O` / `Ctrl-O` | changer le tri : pertinence → date → criticité → EPSS |
 | `Alt-Y` / `Ctrl-Y` | changer le thème de couleurs (mémorisé) |
 | `Alt-S`       | liste des sources : contenu, nombre d'entrées, dernière collecte |
+| `Alt-I`       | statistiques : sévérités, années, menaces, CWE, exposition de tes produits |
 | `Alt-E`       | exporter la fiche affichée en HTML |
 | `Alt-R`       | exporter en HTML tous les résultats de la recherche (rapport) |
 | `Alt-M`       | rendre la souris au terminal (clic sur les liens, sélection de texte), et inversement |
@@ -264,6 +265,7 @@ Commandes en ligne (hors TUI) :
 ./vulnkb add <url>       # ajoute un article via Ollama (voir ci-dessous)
 ./vulnkb glossaire       # glossaire : tous les acronymes définis en français
 ./vulnkb info            # aperçu : taille de la base, entrées par source
+./vulnkb stats           # statistiques détaillées + exposition par produit (Alt-I)
 ./vulnkb tui             # interface de recherche (= ./vulnkb sans argument)
 ```
 

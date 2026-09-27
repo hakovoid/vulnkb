@@ -372,3 +372,23 @@ func TestSourcesAndEPSSView(t *testing.T) {
 		t.Errorf("fmtPct: %q %q", fmtPct(0.0004), fmtPct(0.032))
 	}
 }
+
+func TestStatsView(t *testing.T) {
+	m := navUI(t, 20)
+	store.SetWatchlist([]string{"spéciale"})
+	defer store.SetWatchlist(nil)
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("i"), Alt: true})
+	if !m.srcView || m.srcTitle != "STATISTIQUES" || cmd == nil {
+		t.Fatal("Alt-I n'ouvre pas les statistiques")
+	}
+	m.Update(cmd())
+	v := stripANSI(m.View())
+	for _, want := range []string{"STATISTIQUES", "Vue d'ensemble", "Par sévérité", "élevée", "Ton exposition"} {
+		if !strings.Contains(v, want) {
+			t.Errorf("statistiques sans %q", want)
+		}
+	}
+	if b := bar(5, 10, ""); visibleLen(b) != barWidth/2 {
+		t.Errorf("barre : %d colonnes", visibleLen(b))
+	}
+}

@@ -91,8 +91,8 @@ func (m *ui) View() string {
 	g := m.geometry()
 	switch {
 	case m.srcView:
-		parts = append(parts, m.overlayView(w, max(6, m.height-headerH-searchH-statusH), "SOURCES", m.srcLines,
-			"┄ ↑↓ défiler · alt+s ou esc pour fermer"))
+		parts = append(parts, m.overlayView(w, max(6, m.height-headerH-searchH-statusH), m.srcTitle, m.srcLines,
+			"┄ ↑↓ défiler · esc pour fermer"))
 	case m.help:
 		parts = append(parts, m.helpView(w, max(6, m.height-headerH-searchH-statusH)))
 	case g.listW == 0:
@@ -162,7 +162,7 @@ func (m *ui) statusView(w int) string {
 	var items []kv
 	switch {
 	case m.srcView:
-		items = []kv{{"↑↓", "défiler"}, {"alt+s esc", "fermer"}}
+		items = []kv{{"↑↓", "défiler"}, {"esc", "fermer"}}
 	case m.help:
 		items = []kv{{"↑↓", "défiler"}, {"? esc", "fermer l'aide"}}
 	case m.gotoMode:
@@ -171,7 +171,7 @@ func (m *ui) statusView(w int) string {
 		items = []kv{{"↑↓ pgup pgdn", "défiler"}, {"entrée esc", "revenir à la liste"}, {"? ", "aide"}}
 	default:
 		items = []kv{{"↑↓", "naviguer"}, {"tab", "détail"}, {"entrée", "fiche"}, {"alt+t", "mes"},
-			{"alt+o", "tri"}, {"alt+g", "n°"}, {"alt+r", "rapport"}, {"alt+s", "sources"}, {"alt+y", "thème"}, {"?", "aide"}, {"esc", "quitter"}}
+			{"alt+o", "tri"}, {"alt+g", "n°"}, {"alt+r", "rapport"}, {"alt+i", "stats"}, {"alt+s", "sources"}, {"alt+y", "thème"}, {"?", "aide"}, {"esc", "quitter"}}
 	}
 	var parts []string
 	if m.flash != "" {
