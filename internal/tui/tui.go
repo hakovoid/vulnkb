@@ -69,7 +69,7 @@ func Run(st *store.Store) error {
 	defer restore()
 
 	u := &ui{st: st}
-	u.total, _ = st.Count()
+	u.total, _ = st.CountMatches("")
 	u.kev, _ = st.CVEIndex("cisa-kev")
 	u.certfr, _ = st.CVEIndex("certfr")
 	u.rows, u.cols = termSize()

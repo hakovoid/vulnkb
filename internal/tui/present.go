@@ -112,6 +112,7 @@ var sources = map[string]sourceInfo{
 	"osv":        {"OSV", green, "OSV.dev (paquets open source)"},
 	"article-ia": {"IA ", magenta, "article, fiche extraite par IA (à relire)"},
 	"certfr":     {"FR ", blue, "CERT-FR (ANSSI), en français"},
+	"nvd":        {"NVD", cyan, "NVD (base CVE du NIST)"},
 }
 
 func sourceOf(name string) sourceInfo {

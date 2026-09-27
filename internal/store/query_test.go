@@ -231,3 +231,47 @@ VALUES ('osv:GHSA-z', 'osv', 'GHSA-z (CVE-2026-7007)', 'Old entry', 's', 'c', 'C
 		t.Errorf("réouverture: %d", n)
 	}
 }
+
+func TestNVDShadowing(t *testing.T) {
+	st, err := Open(t.TempDir() + "/shadow.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	_, err = st.Upsert([]model.Advisory{
+		{ID: "nvd:CVE-2026-1001", Source: "nvd", ExternalID: "CVE-2026-1001", Title: "gitea nvd"},
+		{ID: "nvd:CVE-2026-2002", Source: "nvd", ExternalID: "CVE-2026-2002", Title: "vtiger nvd"},
+		{ID: "nvd:CVE-2026-3003", Source: "nvd", ExternalID: "CVE-2026-3003", Title: "kernel nvd"},
+		{ID: "osv:GHSA-a", Source: "osv", ExternalID: "GHSA-a (CVE-2026-1001)", Title: "gitea osv"},
+		{ID: "certfr:X", Source: "certfr", ExternalID: "CERTFR-2026-AVI-9 (CVE-2026-3003)", Title: "kernel fr"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.RefreshDerived(); err != nil {
+		t.Fatal(err)
+	}
+	for q, want := range map[string]int{
+		"":        4, // l'entrée NVD de CVE-2026-1001 est masquée (fiche OSV)
+		"gitea":   1,
+		"vtiger":  1,
+		"kernel":  2, // un avis CERT-FR ne masque pas l'entrée NVD
+		"src:nvd": 3, // demandé explicitement : tout NVD
+	} {
+		if n, err := st.CountMatches(q); err != nil || n != want {
+			t.Errorf("%q: %d (%v), attendu %d", q, n, err, want)
+		}
+	}
+
+	// la fiche OSV disparaît : l'entrée NVD redevient visible
+	if err := st.DeleteAdvisories([]string{"osv:GHSA-a"}); err != nil {
+		t.Fatal(err)
+	}
+	st.RefreshDerived()
+	if n, _ := st.CountMatches("gitea"); n != 1 {
+		t.Errorf("entrée NVD non démasquée: %d", n)
+	}
+	if res, _ := st.Search("gitea", 5); len(res) != 1 || res[0].Source != "nvd" {
+		t.Errorf("gitea après suppression: %+v", res)
+	}
+}

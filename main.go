@@ -60,7 +60,7 @@ func run() error {
 				fmt.Println(s.Name())
 			}
 		}
-		fmt.Println("nvd  (scores CVSS : complète la sévérité des autres sources)")
+		fmt.Println("nvd  (tous les CVE et leurs scores CVSS ; complète la sévérité des autres sources)")
 		return nil
 	case "add":
 		return add(st, args)
@@ -212,18 +212,28 @@ func sync(st *store.Store, names []string) error {
 	if withNVD {
 		syncNVD(st)
 	}
+	fmt.Print("→ recoupements entre sources… ")
+	if err := st.RefreshDerived(); err != nil {
+		fmt.Printf("échec: %v\n", err)
+	} else {
+		fmt.Println("ok")
+	}
 	total, _ := st.Count()
-	fmt.Printf("base: %d entrées au total\n", total)
+	shown, _ := st.CountMatches("")
+	fmt.Printf("base: %d entrées au total, dont %d affichées par défaut\n", total, shown)
 	return nil
 }
 
-const nvdSyncedKey = "nvd_synced"
+// nvdSyncedKey date la dernière synchro NVD complète ou incrémentale. Son nom
+// change quand le contenu stocké change (ici : entrées en plus des scores),
+// ce qui force une nouvelle synchro complète.
+const nvdSyncedKey = "nvd_synced_entries"
 
-// syncNVD met à jour les scores CVSS : tous les flux annuels la première fois
-// (ou si la dernière synchro date de plus de 7 jours), sinon seulement le
-// flux des CVE modifiés sur les 8 derniers jours.
+// syncNVD met à jour les CVE et leurs scores CVSS : tous les flux annuels la
+// première fois (ou si la dernière synchro date de plus de 7 jours), sinon
+// seulement le flux des CVE modifiés sur les 8 derniers jours.
 func syncNVD(st *store.Store) {
-	fmt.Print("→ nvd (scores CVSS)… ")
+	fmt.Print("→ nvd (CVE et scores CVSS)… ")
 	feeds := []string{"modified"}
 	last, _ := st.Meta(nvdSyncedKey)
 	t, err := time.Parse(time.RFC3339, last)
@@ -237,37 +247,51 @@ func syncNVD(st *store.Store) {
 	}
 
 	start := time.Now()
-	written, failed := 0, 0
+	entries, scores, failed := 0, 0, 0
 	client := &http.Client{}
 	for _, feed := range feeds {
-		var batch []model.CVSS
+		var advs []model.Advisory
+		var cvss []model.CVSS
+		var rejected []string
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
-		err := nvd.Fetch(ctx, client, nvd.FeedBase, feed, func(c model.CVSS) error {
-			batch = append(batch, c)
+		err := nvd.Fetch(ctx, client, nvd.FeedBase, feed, func(r nvd.Record) error {
+			if r.Rejected {
+				rejected = append(rejected, nvd.Source+":"+r.CVE)
+				return nil
+			}
+			advs = append(advs, r.Advisory)
+			if r.Score.CVE != "" {
+				cvss = append(cvss, r.Score)
+			}
 			return nil
 		})
 		cancel()
 		if err == nil {
-			err = st.UpsertNVD(batch)
+			err = st.UpsertNVD(cvss)
+		}
+		if err == nil {
+			_, err = st.Upsert(advs)
+		}
+		if err == nil {
+			err = st.DeleteAdvisories(rejected)
 		}
 		if err != nil {
 			failed++
 			fmt.Printf("\n   %s : échec : %v\n   ", feed, err)
 			continue
 		}
-		written += len(batch)
+		entries += len(advs)
+		scores += len(cvss)
 		if len(feeds) > 1 {
 			fmt.Printf("%s ", feed)
 		}
-	}
-	if err := st.RefreshLevels(); err != nil {
-		fmt.Printf("\n   recalcul des sévérités : %v", err)
 	}
 	if failed == 0 {
 		st.SetMeta(nvdSyncedKey, start.Format(time.RFC3339))
 	}
 	total, _ := st.CountNVD()
-	fmt.Printf("\n   %d scores mis à jour en %s, %d CVE notés au total\n", written, time.Since(start).Round(time.Second), total)
+	fmt.Printf("\n   %d CVE et %d scores mis à jour en %s, %d CVE notés au total\n",
+		entries, scores, time.Since(start).Round(time.Second), total)
 }
 
 // dbPath place la base dans le répertoire de config utilisateur, ou dans le

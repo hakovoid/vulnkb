@@ -103,6 +103,62 @@ func (s *Store) RefreshLevels() error {
 	return err
 }
 
+// coveredElsewhere est vrai quand le CVE d'une entrée NVD a déjà une fiche
+// propre dans une autre source (OSV, CISA KEV, article…). Les avis CERT-FR,
+// qui regroupent souvent des dizaines de CVE, ne comptent pas.
+const coveredElsewhere = `EXISTS (
+    SELECT 1 FROM advisory_cves c JOIN advisory_cves o ON o.cve = c.cve
+    WHERE c.id = advisories.id AND o.id <> c.id
+      AND o.id NOT LIKE 'nvd:%' AND o.id NOT LIKE 'certfr:%')`
+
+// RefreshShadowed masque les entrées NVD couvertes par une autre source, et
+// démasque celles qui ne le sont plus.
+func (s *Store) RefreshShadowed() error {
+	_, err := s.db.Exec(`
+UPDATE advisories SET shadowed = 1 WHERE source = 'nvd' AND shadowed = 0 AND ` + coveredElsewhere + `;
+UPDATE advisories SET shadowed = 0 WHERE source = 'nvd' AND shadowed = 1 AND NOT ` + coveredElsewhere + `;`)
+	return err
+}
+
+// kevLinked liste les entrées qui partagent un CVE avec le catalogue CISA KEV
+// (les entrées KEV elles-mêmes comprises).
+const kevLinked = `SELECT c.id FROM advisory_cves c
+    JOIN advisory_cves k ON k.cve = c.cve AND k.id >= 'cisa-kev:' AND k.id < 'cisa-kev;'`
+
+// RefreshExploited met à jour le marqueur « exploitée activement ».
+func (s *Store) RefreshExploited() error {
+	_, err := s.db.Exec(`
+UPDATE advisories SET exploited = 1 WHERE exploited = 0 AND id IN (` + kevLinked + `);
+UPDATE advisories SET exploited = 0 WHERE exploited = 1 AND id NOT IN (` + kevLinked + `);`)
+	return err
+}
+
+// RefreshDerived recalcule tout ce qui dépend de plusieurs sources à la fois ;
+// à appeler en fin de synchro.
+func (s *Store) RefreshDerived() error {
+	for _, f := range []func() error{s.RefreshLevels, s.RefreshShadowed, s.RefreshExploited} {
+		if err := f(); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// DeleteAdvisories supprime des entrées (ex. CVE rejetés par NVD).
+func (s *Store) DeleteAdvisories(ids []string) error {
+	return s.inTx(func(tx *sql.Tx) error {
+		for _, id := range ids {
+			if _, err := tx.Exec(`DELETE FROM advisories WHERE id = ?`, id); err != nil {
+				return err
+			}
+			if _, err := tx.Exec(`DELETE FROM advisory_cves WHERE id = ?`, id); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
 // ftsColumns sont les champs cherchés par la recherche plein-texte.
 var ftsColumns = []string{"external_id", "title", "summary", "component", "vuln_type",
 	"affected_versions", "fixed_versions", "remediation"}
@@ -147,10 +203,23 @@ func (s *Store) migrate() error {
 	if err != nil {
 		return err
 	}
+	if _, err := s.addColumnIfMissing("advisories", "shadowed", "INTEGER NOT NULL DEFAULT 0"); err != nil {
+		return err
+	}
+	exploitedAdded, err := s.addColumnIfMissing("advisories", "exploited", "INTEGER NOT NULL DEFAULT 0")
+	if err != nil {
+		return err
+	}
 	if _, err := s.db.Exec(`
-CREATE INDEX IF NOT EXISTS advisories_source ON advisories(source);
+DROP INDEX IF EXISTS advisories_source;
+CREATE INDEX IF NOT EXISTS advisories_source_pub ON advisories(source, published DESC, id);
+CREATE INDEX IF NOT EXISTS advisories_exploited ON advisories(exploited);`); err != nil {
+		return fmt.Errorf("migration index: %w", err)
+	}
+	if _, err := s.db.Exec(`
 CREATE INDEX IF NOT EXISTS advisories_severity ON advisories(severity_level);
-CREATE INDEX IF NOT EXISTS advisories_eff_level ON advisories(eff_level);`); err != nil {
+CREATE INDEX IF NOT EXISTS advisories_eff_level ON advisories(eff_level);
+CREATE INDEX IF NOT EXISTS advisories_shadowed ON advisories(shadowed, published DESC, id);`); err != nil {
 		return fmt.Errorf("migration index: %w", err)
 	}
 	// l'index plein-texte d'abord : ses triggers ne doivent pas réagir aux
@@ -165,6 +234,11 @@ CREATE INDEX IF NOT EXISTS advisories_eff_level ON advisories(eff_level);`); err
 	}
 	if err := s.backfillCVEs(); err != nil {
 		return err
+	}
+	if exploitedAdded {
+		if err := s.RefreshExploited(); err != nil {
+			return err
+		}
 	}
 	if sevAdded || effAdded {
 		return s.RefreshLevels()
@@ -367,7 +441,8 @@ ON CONFLICT(id) DO UPDATE SET
 		if err := writeCVEs(tx, a.ID, a.ExternalID); err != nil {
 			return n, fmt.Errorf("upsert %s: %w", a.ID, err)
 		}
-		if _, err := tx.Exec(`UPDATE advisories SET eff_level = `+effectiveLevel+` WHERE id = ?`, a.ID); err != nil {
+		if _, err := tx.Exec(`UPDATE advisories SET eff_level = `+effectiveLevel+`,
+    exploited = (id IN (`+kevLinked+` WHERE c.id = ?)) WHERE id = ?`, a.ID, a.ID); err != nil {
 			return n, fmt.Errorf("upsert %s: %w", a.ID, err)
 		}
 		n++
@@ -493,7 +568,9 @@ func searchFrom(q Query) (from, order string, args []any) {
 	if strings.TrimSpace(q.Text) == "" {
 		return `FROM advisories a WHERE 1=1` + filter, `a.published DESC, a.id`, fargs
 	}
-	return `FROM advisories_fts f JOIN advisories a ON a.rowid = f.rowid
+	// CROSS JOIN impose de partir de l'index plein-texte : sinon SQLite peut
+	// parcourir toutes les entrées visibles et interroger l'index pour chacune.
+	return `FROM advisories_fts f CROSS JOIN advisories a ON a.rowid = f.rowid
 WHERE advisories_fts MATCH ?` + filter, `f.rank, a.id`, append([]any{ftsQuery(q.Text)}, fargs...)
 }
 

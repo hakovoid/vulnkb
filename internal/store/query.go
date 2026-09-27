@@ -1,6 +1,7 @@
 package store
 
 import (
+	"slices"
 	"sort"
 	"strings"
 
@@ -38,6 +39,7 @@ var srcNames = map[string]string{
 	"osv": "osv",
 	"fr":  "certfr", "certfr": "certfr", "cert-fr": "certfr",
 	"ia": "article-ia", "article": "article-ia", "article-ia": "article-ia",
+	"nvd": "nvd",
 }
 
 // ParseQuery sépare le texte libre des filtres.
@@ -114,6 +116,11 @@ func fold(s string) string {
 func (q Query) where() (string, []any) {
 	var sb strings.Builder
 	var args []any
+	// les entrées NVD déjà couvertes par une autre source ne s'affichent que
+	// si l'on demande explicitement src:nvd
+	if !slices.Contains(q.Sources, "nvd") {
+		sb.WriteString(" AND a.shadowed = 0")
+	}
 	if len(q.Severities) > 0 {
 		sb.WriteString(" AND a.eff_level IN (" + placeholders(len(q.Severities)) + ")")
 		for _, l := range q.Severities {
@@ -127,10 +134,7 @@ func (q Query) where() (string, []any) {
 		}
 	}
 	if q.Exploited {
-		sb.WriteString(` AND EXISTS (
-    SELECT 1 FROM advisory_cves c
-    JOIN advisory_cves k ON k.cve = c.cve AND k.id >= 'cisa-kev:' AND k.id < 'cisa-kev;'
-    WHERE c.id = a.id)`)
+		sb.WriteString(" AND a.exploited = 1") // tenu à jour par RefreshExploited
 	}
 	return sb.String(), args
 }

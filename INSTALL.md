@@ -78,17 +78,21 @@ Sources disponibles :
   les suivantes ne reprennent que les bulletins révisés depuis. Pour remonter
   plus loin, par exemple 5 ans, avant la première collecte :
   `VULNKB_CERTFR_DAYS=1825 ./vulnkb sync certfr`.
-- `nvd` : scores CVSS de la base NVD (NIST), pour environ 380 000 CVE. Ce ne
-  sont pas des entrées de la liste : ils donnent une sévérité, un score et un
-  type (CWE) aux entrées qui n'en ont pas, en particulier CISA KEV et CERT-FR.
-  La première synchro télécharge les flux annuels (environ 220 Mo, une
-  vingtaine de secondes) ; les suivantes, si elles ont lieu dans les 7 jours,
-  seulement le flux des 8 derniers jours (environ 1 seconde). Pour forcer une
-  synchro complète : `VULNKB_NVD_FULL=1 ./vulnkb sync nvd`.
+- `nvd` : la base NVD (NIST), soit tous les CVE publiés (environ 387 000),
+  y compris pour les logiciels hors registres de paquets (vtiger, appliances,
+  OS…). Chaque CVE devient une entrée : description, produits et plages de
+  versions (CPE), CWE, score CVSS, références. Les scores servent aussi de
+  sévérité aux entrées qui n'en ont pas (CISA KEV, CERT-FR). Un CVE déjà
+  décrit par OSV, CISA KEV ou un article n'apparaît pas en double : son entrée
+  NVD est masquée, sauf avec `src:nvd`. La première synchro télécharge les
+  flux annuels (environ 220 Mo, 1 min 30) ; les suivantes, si elles ont lieu
+  dans les 7 jours, seulement le flux des 8 derniers jours (quelques
+  secondes). Pour forcer une synchro complète :
+  `VULNKB_NVD_FULL=1 ./vulnkb sync nvd`.
 
-Ordre de grandeur : un premier `sync` complet prend moins d'une minute sur une
-bonne connexion, pour environ 30 500 entrées (37 500 avec npm), 380 000 scores
-NVD et une base d'environ 170 Mo.
+Ordre de grandeur : un premier `sync` complet prend environ 2 minutes sur une
+bonne connexion, pour environ 410 000 entrées (dont 384 000 affichées) et une
+base d'environ 1 Go, dont 800 Mo pour NVD.
 
 `sync` affiche le nombre d'entrées récupérées par source et le total en base.
 À relancer quand tu veux rafraîchir (l'insertion est idempotente : pas de
@@ -137,7 +141,7 @@ Des filtres se combinent au texte :
 | `sev:crit` | sévérité critique (`crit`, `high`, `med`, `low`, `inconnue` ; ou `critique`, `elevee`, `moyenne`, `faible`) |
 | `sev:crit,high` | plusieurs sévérités |
 | `sev:high+` | cette sévérité ou plus grave |
-| `src:kev` | une source (`kev`, `osv`, `fr`, `ia`) ; `src:kev,fr` pour plusieurs |
+| `src:kev` | une source (`kev`, `osv`, `fr`, `nvd`, `ia`) ; `src:kev,fr` pour plusieurs |
 | `exploitee` | failles exploitées activement : CVE présent dans CISA KEV, toutes sources confondues |
 
 Exemples : `nginx sev:high+ src:osv`, `exploitee src:fr`, `sev:crit gitea`.
