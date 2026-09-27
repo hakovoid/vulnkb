@@ -45,6 +45,31 @@ func (s severity) label() string {
 	return [...]string{"inconnue", "Faible", "Moyenne", "Élevée", "Critique"}[s.level]
 }
 
+// effectiveSeverity est la sévérité donnée par la source, ou à défaut celle
+// du score NVD de ses CVE.
+func effectiveSeverity(a model.Advisory) severity {
+	if s := parseSeverity(a.Severity); s.level > 0 {
+		return s
+	}
+	return severity{level: a.NVD.Level}
+}
+
+// describeNVD présente un score NVD : « 9.8 · CVSS 3.1 · CVE-… · vecteur ».
+func describeNVD(c model.CVSS, nCVEs int) string {
+	s := severity{level: c.Level}
+	txt := s.color() + bold + fmt.Sprintf("%.1f", c.Score) + reset + dim + " · CVSS " + c.Version + " · " + c.CVE
+	if nCVEs > 1 {
+		txt += fmt.Sprintf(" (le plus élevé de %d CVE)", nCVEs)
+	}
+	if c.Source != "" && c.Source != "nvd@nist.gov" {
+		txt += " · évalué par " + c.Source
+	}
+	if c.Vector != "" {
+		txt += " · " + c.Vector
+	}
+	return txt + reset
+}
+
 // describeFilters résume les filtres reconnus dans la saisie, pour que
 // l'utilisateur voie ce qui est réellement appliqué.
 func describeFilters(q store.Query) string {

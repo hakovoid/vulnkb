@@ -115,7 +115,7 @@ func (q Query) where() (string, []any) {
 	var sb strings.Builder
 	var args []any
 	if len(q.Severities) > 0 {
-		sb.WriteString(" AND a.severity_level IN (" + placeholders(len(q.Severities)) + ")")
+		sb.WriteString(" AND a.eff_level IN (" + placeholders(len(q.Severities)) + ")")
 		for _, l := range q.Severities {
 			args = append(args, l)
 		}

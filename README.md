@@ -30,6 +30,7 @@ CGO_ENABLED=1 go build -tags sqlite_fts5 -o vulnkb .   # compile
 | `osv-go`, `osv-pypi`, `osv-packagist`, `osv-crates`, `osv-maven` | advisories OSV.dev par écosystème : versions affectées et corrigées, CWE, liens | oui |
 | `osv-npm` | advisories OSV.dev npm (export de ~200 Mo) | non, `vulnkb sync osv-npm` |
 | `certfr` | avis et alertes du CERT-FR (ANSSI), **en français** : systèmes affectés, risques, solution, CVE | oui |
+| `nvd` | scores CVSS de la base NVD (NIST) : complètent la sévérité et le type (CWE) des entrées qui n'en ont pas, en particulier CISA KEV et CERT-FR | oui |
 
 `certfr` est incrémentale : la première collecte prend les bulletins révisés
 sur les 365 derniers jours (`VULNKB_CERTFR_DAYS` pour changer la fenêtre), les
@@ -65,7 +66,7 @@ passer de la liste au détail, `esc` (ou Ctrl-C) pour quitter.
 La base est stockée dans `~/.config/vulnkb/vulnkb.db` (ou le dossier courant).
 
 > Note réseau : la collecte contacte `cisa.gov`,
-> `osv-vulnerabilities.storage.googleapis.com` et `www.cert.ssi.gouv.fr`, et `go mod tidy` récupère les
+> `osv-vulnerabilities.storage.googleapis.com`, `www.cert.ssi.gouv.fr` et `nvd.nist.gov`, et `go mod tidy` récupère les
 > modules. Si ton environnement filtre les sorties réseau (proxy/allowlist),
 > autorise ces domaines et le proxy Go, ou utilise `GOPROXY=direct` pour tirer
 > les dépendances GitHub.

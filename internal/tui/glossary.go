@@ -168,7 +168,7 @@ var helpText = []string{
 	"  sev:high+        cette sévérité ou plus grave",
 	"  src:kev          source : kev, osv, fr, ia ; plusieurs possibles (src:kev,fr)",
 	"  exploitee        failles exploitées activement (CVE présent dans CISA KEV), toutes sources",
-	"  Note : les entrées CISA KEV et CERT-FR n'ont pas de sévérité (sev:inconnue).",
+	"  Sévérité : celle de la source, sinon la plus haute sévérité NVD des CVE de l'entrée.",
 	"",
 	bold + "Légende de la liste" + reset,
 	"  " + boldRed + "●" + reset + "                faille exploitée activement (présente dans le catalogue CISA KEV)",

@@ -42,4 +42,7 @@ type Advisory struct {
 	Fetched   time.Time // date de collecte par l'outil
 
 	URL string // lien principal
+
+	// Meilleur score NVD parmi les CVE de l'entrée (rempli à la lecture).
+	NVD CVSS
 }

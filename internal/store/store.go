@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"fmt"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -64,7 +65,43 @@ CREATE TABLE IF NOT EXISTS advisory_cves (
     PRIMARY KEY (id, cve)
 );
 CREATE INDEX IF NOT EXISTS advisory_cves_cve ON advisory_cves(cve, id);
+
+-- Scores CVSS de la base NVD, par CVE.
+CREATE TABLE IF NOT EXISTS nvd_scores (
+    cve     TEXT PRIMARY KEY,
+    score   REAL NOT NULL,
+    level   INTEGER NOT NULL,
+    version TEXT,
+    vector  TEXT,
+    source  TEXT,
+    cwe     TEXT
+);
+
+CREATE TABLE IF NOT EXISTS meta (
+    k TEXT PRIMARY KEY,
+    v TEXT
+);
 `
+
+// bestNVD sélectionne, pour l'entrée « a », le score NVD le plus élevé
+// parmi ses CVE.
+const bestNVD = `(SELECT n.cve || '|' || n.score || '|' || n.level || '|' || IFNULL(n.version, '') || '|' ||
+       IFNULL(n.source, '') || '|' || IFNULL(n.cwe, '') || '|' || IFNULL(n.vector, '')
+   FROM advisory_cves c JOIN nvd_scores n ON n.cve = c.cve
+   WHERE c.id = a.id ORDER BY n.score DESC, n.cve LIMIT 1)`
+
+// effectiveLevel calcule la sévérité de l'entrée, ou à défaut la plus haute
+// sévérité NVD de ses CVE. Le résultat est stocké dans eff_level (voir
+// RefreshLevels) pour que le filtre de sévérité reste instantané.
+const effectiveLevel = `(CASE WHEN advisories.severity_level > 0 THEN advisories.severity_level ELSE COALESCE(
+   (SELECT MAX(n.level) FROM advisory_cves c JOIN nvd_scores n ON n.cve = c.cve WHERE c.id = advisories.id), 0) END)`
+
+// RefreshLevels recalcule la sévérité effective de toutes les entrées ; à
+// appeler après une mise à jour des scores NVD.
+func (s *Store) RefreshLevels() error {
+	_, err := s.db.Exec(`UPDATE advisories SET eff_level = ` + effectiveLevel + ` WHERE eff_level <> ` + effectiveLevel)
+	return err
+}
 
 // ftsColumns sont les champs cherchés par la recherche plein-texte.
 var ftsColumns = []string{"external_id", "title", "summary", "component", "vuln_type",
@@ -86,7 +123,7 @@ END;
 CREATE TRIGGER IF NOT EXISTS advisories_ad AFTER DELETE ON advisories BEGIN
     INSERT INTO advisories_fts(advisories_fts, rowid, ` + cols + `) VALUES ('delete', old.rowid, ` + oldCols + `);
 END;
-CREATE TRIGGER IF NOT EXISTS advisories_au AFTER UPDATE ON advisories BEGIN
+CREATE TRIGGER IF NOT EXISTS advisories_au AFTER UPDATE OF ` + cols + ` ON advisories BEGIN
     INSERT INTO advisories_fts(advisories_fts, rowid, ` + cols + `) VALUES ('delete', old.rowid, ` + oldCols + `);
     INSERT INTO advisories_fts(rowid, ` + cols + `) VALUES (new.rowid, ` + newCols + `);
 END;
@@ -102,24 +139,37 @@ func (s *Store) migrate() error {
 	if _, err := s.addColumnIfMissing("advisories", "remediation", "TEXT"); err != nil {
 		return err
 	}
-	added, err := s.addColumnIfMissing("advisories", "severity_level", "INTEGER NOT NULL DEFAULT 0")
+	sevAdded, err := s.addColumnIfMissing("advisories", "severity_level", "INTEGER NOT NULL DEFAULT 0")
 	if err != nil {
 		return err
 	}
-	if added {
+	effAdded, err := s.addColumnIfMissing("advisories", "eff_level", "INTEGER NOT NULL DEFAULT 0")
+	if err != nil {
+		return err
+	}
+	if _, err := s.db.Exec(`
+CREATE INDEX IF NOT EXISTS advisories_source ON advisories(source);
+CREATE INDEX IF NOT EXISTS advisories_severity ON advisories(severity_level);
+CREATE INDEX IF NOT EXISTS advisories_eff_level ON advisories(eff_level);`); err != nil {
+		return fmt.Errorf("migration index: %w", err)
+	}
+	// l'index plein-texte d'abord : ses triggers ne doivent pas réagir aux
+	// mises à jour de masse qui suivent
+	if err := s.migrateFTS(); err != nil {
+		return err
+	}
+	if sevAdded {
 		if err := s.backfillSeverity(); err != nil {
 			return err
 		}
 	}
-	if _, err := s.db.Exec(`
-CREATE INDEX IF NOT EXISTS advisories_source ON advisories(source);
-CREATE INDEX IF NOT EXISTS advisories_severity ON advisories(severity_level);`); err != nil {
-		return fmt.Errorf("migration index: %w", err)
-	}
-	if err := s.migrateFTS(); err != nil {
+	if err := s.backfillCVEs(); err != nil {
 		return err
 	}
-	return s.backfillCVEs()
+	if sevAdded || effAdded {
+		return s.RefreshLevels()
+	}
+	return nil
 }
 
 // migrateFTS crée l'index plein-texte, ou le reconstruit si ses colonnes ont
@@ -147,6 +197,14 @@ DROP TRIGGER IF EXISTS advisories_ai;
 DROP TRIGGER IF EXISTS advisories_ad;
 DROP TRIGGER IF EXISTS advisories_au;
 DROP TABLE IF EXISTS advisories_fts;`); err != nil {
+			return fmt.Errorf("migration fts: %w", err)
+		}
+	}
+	// ancien trigger de mise à jour, déclenché par n'importe quelle colonne
+	var auSQL string
+	s.db.QueryRow(`SELECT sql FROM sqlite_master WHERE type = 'trigger' AND name = 'advisories_au'`).Scan(&auSQL)
+	if auSQL != "" && !strings.Contains(auSQL, "UPDATE OF") {
+		if _, err := s.db.Exec(`DROP TRIGGER advisories_au`); err != nil {
 			return fmt.Errorf("migration fts: %w", err)
 		}
 	}
@@ -309,6 +367,9 @@ ON CONFLICT(id) DO UPDATE SET
 		if err := writeCVEs(tx, a.ID, a.ExternalID); err != nil {
 			return n, fmt.Errorf("upsert %s: %w", a.ID, err)
 		}
+		if _, err := tx.Exec(`UPDATE advisories SET eff_level = `+effectiveLevel+` WHERE id = ?`, a.ID); err != nil {
+			return n, fmt.Errorf("upsert %s: %w", a.ID, err)
+		}
 		n++
 	}
 	return n, tx.Commit()
@@ -327,18 +388,95 @@ func (s *Store) SearchPage(query string, offset, limit int) ([]model.Advisory, e
 	if limit <= 0 {
 		limit = 50
 	}
+	// Deux temps : les identifiants de la page d'abord, puis le détail de ces
+	// seules entrées. En une requête, SQLite calculerait le score NVD de
+	// toutes les entrées filtrées avant de trier.
 	from, order, args := searchFrom(ParseQuery(query))
 	args = append(args, limit, max(0, offset))
+	idRows, err := s.db.Query(`SELECT a.id `+from+` ORDER BY `+order+` LIMIT ? OFFSET ?`, args...)
+	if err != nil {
+		return nil, err
+	}
+	var ids []any
+	for idRows.Next() {
+		var id string
+		if err := idRows.Scan(&id); err != nil {
+			idRows.Close()
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	idRows.Close()
+	if err := idRows.Err(); err != nil || len(ids) == 0 {
+		return nil, err
+	}
+
 	rows, err := s.db.Query(`
 SELECT a.id, a.source, a.external_id, a.title, a.summary, a.component, a.vuln_type,
        a.severity, a.affected_versions, a.fixed_versions, a.remediation, a.references_json,
-       a.published, a.fetched, a.url
-`+from+` ORDER BY `+order+` LIMIT ? OFFSET ?`, args...)
+       a.published, a.fetched, a.url, `+bestNVD+`
+FROM advisories a WHERE a.id IN (`+placeholders(len(ids))+`)`, ids...)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	return scan(rows)
+	found, err := scan(rows)
+	if err != nil {
+		return nil, err
+	}
+	byID := make(map[string]model.Advisory, len(found))
+	for _, a := range found {
+		byID[a.ID] = a
+	}
+	out := make([]model.Advisory, 0, len(ids))
+	for _, id := range ids {
+		if a, ok := byID[id.(string)]; ok {
+			out = append(out, a)
+		}
+	}
+	return out, nil
+}
+
+// UpsertNVD enregistre des scores NVD dans une transaction. Appeler
+// RefreshLevels ensuite pour qu'ils comptent dans le filtre de sévérité.
+func (s *Store) UpsertNVD(scores []model.CVSS) error {
+	return s.inTx(func(tx *sql.Tx) error {
+		stmt, err := tx.Prepare(`INSERT OR REPLACE INTO nvd_scores (cve, score, level, version, vector, source, cwe)
+VALUES (?,?,?,?,?,?,?)`)
+		if err != nil {
+			return err
+		}
+		defer stmt.Close()
+		for _, c := range scores {
+			if _, err := stmt.Exec(c.CVE, c.Score, c.Level, c.Version, c.Vector, c.Source, c.CWE); err != nil {
+				return fmt.Errorf("score NVD %s: %w", c.CVE, err)
+			}
+		}
+		return nil
+	})
+}
+
+// CountNVD renvoie le nombre de CVE dotés d'un score NVD.
+func (s *Store) CountNVD() (int, error) {
+	var n int
+	err := s.db.QueryRow(`SELECT COUNT(*) FROM nvd_scores`).Scan(&n)
+	return n, err
+}
+
+// Meta lit une valeur de suivi (date de dernière synchro…) ; "" si absente.
+func (s *Store) Meta(key string) (string, error) {
+	var v string
+	err := s.db.QueryRow(`SELECT v FROM meta WHERE k = ?`, key).Scan(&v)
+	if err == sql.ErrNoRows {
+		return "", nil
+	}
+	return v, err
+}
+
+// SetMeta enregistre une valeur de suivi.
+func (s *Store) SetMeta(key, value string) error {
+	_, err := s.db.Exec(`INSERT OR REPLACE INTO meta (k, v) VALUES (?, ?)`, key, value)
+	return err
 }
 
 // CountMatches renvoie le nombre total de résultats d'une recherche.
@@ -416,16 +554,17 @@ func scan(rows *sql.Rows) ([]model.Advisory, error) {
 	for rows.Next() {
 		var a model.Advisory
 		var refs string
-		var remediation sql.NullString
+		var remediation, nvd sql.NullString
 		var pub, fetched int64
 		if err := rows.Scan(
 			&a.ID, &a.Source, &a.ExternalID, &a.Title, &a.Summary, &a.Component,
 			&a.VulnType, &a.Severity, &a.AffectedVersions, &a.FixedVersions,
-			&remediation, &refs, &pub, &fetched, &a.URL,
+			&remediation, &refs, &pub, &fetched, &a.URL, &nvd,
 		); err != nil {
 			return nil, err
 		}
 		a.Remediation = remediation.String
+		a.NVD = parseNVD(nvd.String)
 		if refs != "" {
 			a.References = strings.Split(refs, "\n")
 		}
@@ -434,6 +573,17 @@ func scan(rows *sql.Rows) ([]model.Advisory, error) {
 		out = append(out, a)
 	}
 	return out, rows.Err()
+}
+
+// parseNVD relit la ligne produite par bestNVD.
+func parseNVD(s string) model.CVSS {
+	p := strings.SplitN(s, "|", 7)
+	if len(p) != 7 {
+		return model.CVSS{}
+	}
+	score, _ := strconv.ParseFloat(p[1], 64)
+	level, _ := strconv.Atoi(p[2])
+	return model.CVSS{CVE: p[0], Score: score, Level: level, Version: p[3], Source: p[4], CWE: p[5], Vector: p[6]}
 }
 
 // ftsQuery transforme une saisie utilisateur libre en requête FTS5 sûre :

@@ -31,12 +31,13 @@ func ParseSeverity(raw string) Severity {
 		return Severity{Level: l}
 	}
 	if score, ok := CVSS3Score(raw); ok {
-		return Severity{Level: levelForScore(score), Score: fmt.Sprintf("%.1f", score)}
+		return Severity{Level: LevelForScore(score), Score: fmt.Sprintf("%.1f", score)}
 	}
 	return Severity{}
 }
 
-func levelForScore(s float64) int {
+// LevelForScore convertit un score CVSS en niveau (barème CVSS 3.x).
+func LevelForScore(s float64) int {
 	switch {
 	case s >= 9:
 		return SevCritical

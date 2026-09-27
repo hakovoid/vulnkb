@@ -434,7 +434,7 @@ func (u *ui) renderList(b *strings.Builder, h int) {
 		if u.exploited(a) {
 			mark = "●"
 		}
-		sev := parseSeverity(a.Severity)
+		sev := effectiveSeverity(a)
 		src := sourceOf(a.Source)
 		title := strings.ReplaceAll(a.Title, "\n", " ")
 		idCol := fmt.Sprintf("%-20s", trunc(id, 20))
@@ -484,11 +484,21 @@ func (u *ui) renderDetail(b *strings.Builder, h int) {
 			txt += dim + " · CVSS " + sev.score + " (" + a.Severity + ")" + reset
 		}
 		add("Sévérité", txt)
-	} else if a.Source != "cisa-kev" {
+	} else if a.NVD.CVE != "" {
+		nv := severity{level: a.NVD.Level}
+		add("Sévérité", nv.color()+nv.label()+reset+dim+" · d'après NVD"+reset)
+	} else if a.Source != "cisa-kev" && a.Source != "certfr" {
 		add("Sévérité", a.Severity)
 	}
+	if a.NVD.CVE != "" {
+		add("CVSS (NVD)", describeNVD(a.NVD, len(store.CVEs(a.ExternalID))))
+	}
 	add("Composant", a.Component)
-	add("Type", describeCWEs(a.VulnType))
+	if a.VulnType == "" && a.NVD.CWE != "" {
+		add("Type", describeCWEs(a.NVD.CWE)+dim+" (NVD)"+reset)
+	} else {
+		add("Type", describeCWEs(a.VulnType))
+	}
 	add("Versions affectées", a.AffectedVersions)
 	add("Corrigé dans", a.FixedVersions)
 	add("Remédiation", a.Remediation)

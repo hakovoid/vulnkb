@@ -3,6 +3,7 @@ package store
 import (
 	"database/sql"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -93,6 +94,76 @@ func TestFilters(t *testing.T) {
 	}
 }
 
+func TestNVDScores(t *testing.T) {
+	st, err := Open(t.TempDir() + "/nvd.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	_, err = st.Upsert([]model.Advisory{
+		{ID: "cisa-kev:CVE-2026-1001", Source: "cisa-kev", ExternalID: "CVE-2026-1001", Title: "kev", Severity: "Known Exploited"},
+		{ID: "certfr:A", Source: "certfr", ExternalID: "CERTFR-2026-AVI-1 (CVE-2026-1001, CVE-2026-2002)", Title: "fr"},
+		{ID: "osv:B", Source: "osv", ExternalID: "GHSA-b (CVE-2026-2002)", Title: "osv", Severity: "LOW"},
+		{ID: "certfr:C", Source: "certfr", ExternalID: "CERTFR-2026-AVI-2", Title: "fr sans cve"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.UpsertNVD([]model.CVSS{
+		{CVE: "CVE-2026-1001", Score: 9.8, Level: model.SevCritical, Version: "3.1", Vector: "CVSS:3.1/AV:N", Source: "nvd@nist.gov", CWE: "CWE-79"},
+		{CVE: "CVE-2026-2002", Score: 7.5, Level: model.SevHigh, Version: "4.0", Source: "cna@x"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if n, _ := st.CountMatches("sev:crit"); n != 0 {
+		t.Errorf("sévérité NVD prise en compte avant RefreshLevels: %d", n)
+	}
+	if err := st.RefreshLevels(); err != nil {
+		t.Fatal(err)
+	}
+
+	for q, want := range map[string]int{
+		"sev:crit":     2, // KEV et l'avis CERT-FR via le CVE le plus grave
+		"sev:high":     0, // l'entrée OSV garde sa propre sévérité (LOW)
+		"sev:low":      1,
+		"sev:inconnue": 1, // l'avis sans CVE
+	} {
+		if n, err := st.CountMatches(q); err != nil || n != want {
+			t.Errorf("%q: %d (%v), attendu %d", q, n, err, want)
+		}
+	}
+
+	res, _ := st.Search("src:fr", 10)
+	if len(res) != 2 {
+		t.Fatalf("src:fr: %d résultats", len(res))
+	}
+	for _, a := range res {
+		switch a.ID {
+		case "certfr:A":
+			want := model.CVSS{CVE: "CVE-2026-1001", Score: 9.8, Level: model.SevCritical, Version: "3.1", Vector: "CVSS:3.1/AV:N", Source: "nvd@nist.gov", CWE: "CWE-79"}
+			if a.NVD != want {
+				t.Errorf("meilleur score NVD:\n obtenu  %+v\n attendu %+v", a.NVD, want)
+			}
+		case "certfr:C":
+			if a.NVD != (model.CVSS{}) {
+				t.Errorf("score NVD inattendu: %+v", a.NVD)
+			}
+		}
+	}
+
+	if n, _ := st.CountNVD(); n != 2 {
+		t.Errorf("CountNVD: %d", n)
+	}
+	if v, _ := st.Meta("x"); v != "" {
+		t.Errorf("meta absente: %q", v)
+	}
+	st.SetMeta("x", "1")
+	st.SetMeta("x", "2")
+	if v, _ := st.Meta("x"); v != "2" {
+		t.Errorf("meta: %q", v)
+	}
+}
+
 func primaryIDForTest(ext string) string {
 	for i := range ext {
 		if ext[i] == ' ' {
@@ -142,6 +213,14 @@ VALUES ('osv:GHSA-z', 'osv', 'GHSA-z (CVE-2026-7007)', 'Old entry', 's', 'c', 'C
 		if n, err := st.CountMatches(q); err != nil || n != want {
 			t.Errorf("%q après migration: %d (%v), attendu %d", q, n, err, want)
 		}
+	}
+	var au string
+	st.db.QueryRow(`SELECT sql FROM sqlite_master WHERE name = 'advisories_au'`).Scan(&au)
+	if !strings.Contains(au, "UPDATE OF") {
+		t.Errorf("trigger de mise à jour non restreint aux colonnes indexées: %s", au)
+	}
+	if n, _ := st.CountMatches("sev:high src:osv"); n != 1 {
+		t.Errorf("eff_level non calculé à la migration: %d", n)
 	}
 	// une seconde ouverture ne doit rien reconstruire ni casser
 	st.Close()

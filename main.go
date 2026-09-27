@@ -16,11 +16,13 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
 	"vulnkb/internal/extract"
 	"vulnkb/internal/model"
+	"vulnkb/internal/nvd"
 	"vulnkb/internal/source"
 	"vulnkb/internal/store"
 	"vulnkb/internal/tui"
@@ -58,6 +60,7 @@ func run() error {
 				fmt.Println(s.Name())
 			}
 		}
+		fmt.Println("nvd  (scores CVSS : complète la sévérité des autres sources)")
 		return nil
 	case "add":
 		return add(st, args)
@@ -165,13 +168,19 @@ func envOr(key, def string) string {
 	return def
 }
 
-// sync collecte les sources demandées (celles par défaut si aucune n'est nommée).
+// sync collecte les sources demandées (celles par défaut si aucune n'est
+// nommée), puis les scores NVD.
 func sync(st *store.Store, names []string) error {
 	var srcs []source.Source
+	withNVD := len(names) == 0
 	if len(names) == 0 {
 		srcs = source.Defaults()
 	} else {
 		for _, n := range names {
+			if n == "nvd" {
+				withNVD = true
+				continue
+			}
 			s, ok := source.Get(n)
 			if !ok {
 				return fmt.Errorf("source inconnue: %s", n)
@@ -200,9 +209,65 @@ func sync(st *store.Store, names []string) error {
 		}
 		fmt.Printf("%d entrées\n", n)
 	}
+	if withNVD {
+		syncNVD(st)
+	}
 	total, _ := st.Count()
 	fmt.Printf("base: %d entrées au total\n", total)
 	return nil
+}
+
+const nvdSyncedKey = "nvd_synced"
+
+// syncNVD met à jour les scores CVSS : tous les flux annuels la première fois
+// (ou si la dernière synchro date de plus de 7 jours), sinon seulement le
+// flux des CVE modifiés sur les 8 derniers jours.
+func syncNVD(st *store.Store) {
+	fmt.Print("→ nvd (scores CVSS)… ")
+	feeds := []string{"modified"}
+	last, _ := st.Meta(nvdSyncedKey)
+	t, err := time.Parse(time.RFC3339, last)
+	if err != nil || time.Since(t) > 7*24*time.Hour || os.Getenv("VULNKB_NVD_FULL") != "" {
+		feeds = nil
+		for y := nvd.FirstYear; y <= time.Now().Year(); y++ {
+			feeds = append(feeds, strconv.Itoa(y))
+		}
+		feeds = append(feeds, "modified")
+		fmt.Print("synchro complète, ")
+	}
+
+	start := time.Now()
+	written, failed := 0, 0
+	client := &http.Client{}
+	for _, feed := range feeds {
+		var batch []model.CVSS
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+		err := nvd.Fetch(ctx, client, nvd.FeedBase, feed, func(c model.CVSS) error {
+			batch = append(batch, c)
+			return nil
+		})
+		cancel()
+		if err == nil {
+			err = st.UpsertNVD(batch)
+		}
+		if err != nil {
+			failed++
+			fmt.Printf("\n   %s : échec : %v\n   ", feed, err)
+			continue
+		}
+		written += len(batch)
+		if len(feeds) > 1 {
+			fmt.Printf("%s ", feed)
+		}
+	}
+	if err := st.RefreshLevels(); err != nil {
+		fmt.Printf("\n   recalcul des sévérités : %v", err)
+	}
+	if failed == 0 {
+		st.SetMeta(nvdSyncedKey, start.Format(time.RFC3339))
+	}
+	total, _ := st.CountNVD()
+	fmt.Printf("\n   %d scores mis à jour en %s, %d CVE notés au total\n", written, time.Since(start).Round(time.Second), total)
 }
 
 // dbPath place la base dans le répertoire de config utilisateur, ou dans le

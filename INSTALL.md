@@ -16,8 +16,8 @@ retrouver une info en quelques frappes.
   - Debian/Ubuntu : `sudo apt install build-essential`
   - Fedora : `sudo dnf install gcc`
 - **Accès réseau** vers GitHub (dépendances) et vers les sources de données
-  (`cisa.gov`, `osv-vulnerabilities.storage.googleapis.com` et
-  `www.cert.ssi.gouv.fr`).
+  (`cisa.gov`, `osv-vulnerabilities.storage.googleapis.com`,
+  `www.cert.ssi.gouv.fr` et `nvd.nist.gov`).
 
 ---
 
@@ -52,8 +52,8 @@ CGO_ENABLED=1 go test -tags sqlite_fts5 ./...   # doit afficher "ok"
   GOPROXY=direct GOSUMDB=off go mod tidy
   ```
 - Pour la collecte, autorise `cisa.gov`,
-  `osv-vulnerabilities.storage.googleapis.com` et `www.cert.ssi.gouv.fr` en
-  sortie, ou ajoute une source
+  `osv-vulnerabilities.storage.googleapis.com`, `www.cert.ssi.gouv.fr` et
+  `nvd.nist.gov` en sortie, ou ajoute une source
   interne à ton réseau (voir §5).
 
 ---
@@ -78,10 +78,17 @@ Sources disponibles :
   les suivantes ne reprennent que les bulletins révisés depuis. Pour remonter
   plus loin, par exemple 5 ans, avant la première collecte :
   `VULNKB_CERTFR_DAYS=1825 ./vulnkb sync certfr`.
+- `nvd` : scores CVSS de la base NVD (NIST), pour environ 380 000 CVE. Ce ne
+  sont pas des entrées de la liste : ils donnent une sévérité, un score et un
+  type (CWE) aux entrées qui n'en ont pas, en particulier CISA KEV et CERT-FR.
+  La première synchro télécharge les flux annuels (environ 220 Mo, une
+  vingtaine de secondes) ; les suivantes, si elles ont lieu dans les 7 jours,
+  seulement le flux des 8 derniers jours (environ 1 seconde). Pour forcer une
+  synchro complète : `VULNKB_NVD_FULL=1 ./vulnkb sync nvd`.
 
-Ordre de grandeur : un premier `sync` complet prend une vingtaine de secondes
-sur une bonne connexion, pour environ 30 500 entrées (37 500 avec npm) et une
-base de 100 à 130 Mo.
+Ordre de grandeur : un premier `sync` complet prend moins d'une minute sur une
+bonne connexion, pour environ 30 500 entrées (37 500 avec npm), 380 000 scores
+NVD et une base d'environ 170 Mo.
 
 `sync` affiche le nombre d'entrées récupérées par source et le total en base.
 À relancer quand tu veux rafraîchir (l'insertion est idempotente : pas de
@@ -135,10 +142,15 @@ Des filtres se combinent au texte :
 
 Exemples : `nginx sev:high+ src:osv`, `exploitee src:fr`, `sev:crit gitea`.
 Les filtres reconnus s'affichent à droite de la saisie ; un filtre mal écrit
-est signalé en rouge. Les entrées CISA KEV et CERT-FR n'ont pas de sévérité :
-elles tombent dans `sev:inconnue`. Une recherche vide affiche toutes les entrées, les plus
-récentes en premier. L'en-tête indique la position (« résultat 1 234 /
-30 559 ») ; tous les résultats sont accessibles, pas seulement les premiers.
+est signalé en rouge.
+
+La sévérité filtrée est celle de la source ; à défaut (CISA KEV, CERT-FR), la
+plus haute sévérité NVD des CVE de l'entrée. Un avis CERT-FR qui couvre
+plusieurs CVE est donc classé selon le plus grave.
+
+Une recherche vide affiche toutes les entrées, les plus récentes en premier.
+L'en-tête indique la position (« résultat 1 234 / 30 559 ») ; tous les
+résultats sont accessibles, pas seulement les premiers.
 
 Commandes en ligne (hors TUI) :
 
@@ -221,7 +233,7 @@ nomme (`vulnkb sync ma-source`). Pistes : NVD (CVSS/CWE), flux RSS d'éditeurs.
 | `no such module fts5` / erreur à la création de la base | tag de build oublié | recompiler avec `-tags sqlite_fts5` |
 | erreur cgo / `gcc: command not found` | pas de compilateur C | installer build-essential / Xcode CLT |
 | `403 Forbidden` sur `go mod tidy` | proxy Go bloqué | `GOPROXY=direct GOSUMDB=off go mod tidy` |
-| `sync` échoue en `Forbidden` | `cisa.gov`, le bucket OSV ou le CERT-FR bloqué en sortie | autoriser le domaine, ou ajouter une source interne |
+| `sync` échoue en `Forbidden` | `cisa.gov`, le bucket OSV, le CERT-FR ou NVD bloqué en sortie | autoriser le domaine, ou ajouter une source interne |
 | `add` : « Ollama injoignable » | Ollama arrêté | `cd ~/kuro_apps/ollama && docker compose up -d` |
 | `add` : `model "…" not found` | modèle non téléchargé | `docker exec ollama-shared ollama pull <modèle>` |
 | `add` : fiche en anglais ou incomplète | modèle trop petit | réessayer avec `-model qwen2.5-coder:14b` |
