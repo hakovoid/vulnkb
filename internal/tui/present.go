@@ -59,6 +59,42 @@ func describeNVD(c model.CVSS, nCVEs int) string {
 	return txt + reset
 }
 
+var (
+	refAggregators = []string{"nvd.nist.gov", "cve.org", "cve.mitre.org", "osv.dev", "first.org", "cisa.gov/known-exploited"}
+	refFixHints    = []string{"/commit/", "/releases/", "/security/", "advisor", "bulletin", "/patch", "/support/", "/kb/", "/hc/", "security-update", "release-notes"}
+)
+
+// fixLink choisit, parmi les références, le lien le plus utile pour corriger :
+// un avis éditeur ou un correctif de préférence, en écartant les agrégateurs
+// (NVD, CVE.org, OSV…). Renvoie "" si seuls des agrégateurs sont présents.
+func fixLink(refs []string) string {
+	var fallback string
+	for _, r := range refs {
+		low := strings.ToLower(r)
+		if containsAny(low, refAggregators) {
+			continue
+		}
+		for _, h := range refFixHints {
+			if strings.Contains(low, h) {
+				return r
+			}
+		}
+		if fallback == "" {
+			fallback = r
+		}
+	}
+	return fallback
+}
+
+func containsAny(s string, subs []string) bool {
+	for _, sub := range subs {
+		if strings.Contains(s, sub) {
+			return true
+		}
+	}
+	return false
+}
+
 // shortRemediation remplace le long paragraphe générique de CISA KEV (« Apply
 // mitigations in accordance with vendor instructions… BOD 26-04… ») par une
 // consigne courte en français ; les autres remédiations sont laissées telles

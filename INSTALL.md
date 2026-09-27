@@ -130,6 +130,11 @@ sévérité en couleur (`CRIT`, `HIGH`, `MED`, `LOW`), la source (`KEV`, `OSV`,
 vecteur CVSS 3.x, le score est calculé et affiché dans le détail. Le détail
 donne aussi le nom en clair des CWE courantes.
 
+En tête de fiche, un bloc **« Que faire »** synthétise l'essentiel : si la
+faille est exploitée activement (priorité), l'action concrète (mettre à jour
+vers la version corrective, ou la remédiation), et le lien le plus utile pour
+corriger (avis éditeur ou correctif, en écartant les agrégateurs comme NVD).
+
 L'interface suit le fond du terminal (thème sombre ou clair) et le nombre de
 couleurs qu'il gère (16, 256 ou 16 millions). La couleur d'accent (badge,
 barre de recherche, panneau actif) se change avec `VULNKB_ACCENT`, par exemple

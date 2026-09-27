@@ -299,6 +299,33 @@ func (m *ui) detailPanel(w, h int) string {
 	return panel(w, h, m.detFocus || m.zoom, title, right, body, sty.faint.Render("┄ "+hint))
 }
 
+// actionLines est le bloc « Que faire » en tête de fiche : il synthétise la
+// priorité (faille exploitée) et l'action concrète (correctif ou remédiation),
+// avec le lien le plus utile. Vide si rien d'actionnable n'est connu.
+func (m *ui) actionLines(a model.Advisory, w int) []string {
+	var body []string
+	if m.exploited(a) {
+		body = append(body, boldRed+"⚠ exploitée activement — à corriger en priorité"+reset)
+	}
+	switch {
+	case a.FixedVersions != "":
+		body = append(body, wrapLines(sty.green.Render("↑ mettre à jour : ")+a.FixedVersions, w)...)
+	case strings.TrimSpace(shortRemediation(a.Remediation)) != "":
+		body = append(body, wrapLines(sty.accent.Render("→ ")+shortRemediation(a.Remediation), w)...)
+	default:
+		body = append(body, sty.muted.Render("Pas de correctif indiqué — voir les références ci-dessous."))
+	}
+	if link := fixLink(a.References); link != "" {
+		body = append(body, wrapLines(sty.muted.Render("↳ correctif/avis : ")+labelColor+link+reset, w)...)
+	}
+	if len(body) == 0 {
+		return nil
+	}
+	out := []string{sty.accent.Render("Que faire")}
+	out = append(out, body...)
+	return append(out, "")
+}
+
 // detailLines compose la fiche : titre, grille libellé/valeur, résumé,
 // références.
 func (m *ui) detailLines(a model.Advisory, w int) []string {
@@ -307,6 +334,7 @@ func (m *ui) detailLines(a model.Advisory, w int) []string {
 		lines = append(lines, sty.bright.Render(l))
 	}
 	lines = append(lines, "")
+	lines = append(lines, m.actionLines(a, w)...)
 
 	valW := max(10, w-labelW-1)
 	kv := func(label, val string) {

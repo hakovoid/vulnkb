@@ -67,3 +67,22 @@ func TestShortRemediation(t *testing.T) {
 		t.Errorf("remédiation propre modifiée: %q", shortRemediation(own))
 	}
 }
+
+func TestFixLink(t *testing.T) {
+	refs := []string{
+		"https://nvd.nist.gov/vuln/detail/CVE-2026-1",
+		"https://www.cve.org/CVERecord?id=CVE-2026-1",
+		"https://github.com/strukturag/libheif/releases/tag/v1.23.4",
+	}
+	if got := fixLink(refs); got != refs[2] {
+		t.Errorf("fixLink correctif: %q", got)
+	}
+	// aucun indice de correctif : premier lien non-agrégateur
+	if got := fixLink([]string{"https://nvd.nist.gov/x", "https://blog.example/post"}); got != "https://blog.example/post" {
+		t.Errorf("fixLink repli: %q", got)
+	}
+	// que des agrégateurs
+	if got := fixLink([]string{"https://nvd.nist.gov/x", "https://osv.dev/y"}); got != "" {
+		t.Errorf("fixLink agrégateurs: %q", got)
+	}
+}
