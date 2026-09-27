@@ -78,7 +78,7 @@ internal/model/    format normalisé (Advisory) — le pivot commun
 internal/store/    SQLite + index FTS5, upsert et recherche
 internal/source/   interface Source + registre ; une source = un fichier
 internal/extract/  article web → texte → fiche via Ollama (commande add)
-internal/tui/      interface terminal autonome (recherche / liste / détail)
+internal/tui/      interface Bubble Tea + Lipgloss (recherche / liste / fiche / aide)
 main.go            CLI : sync, sources, add, tui
 ```
 

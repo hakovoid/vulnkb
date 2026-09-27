@@ -117,6 +117,7 @@ Lance `./vulnkb` (ou `./vulnkb tui`).
 | `Début` / `Fin` | premier / dernier résultat                 |
 | `Ctrl-G`      | aller au résultat n° … (taper le numéro, puis `Entrée`) |
 | `Tab`         | basculer le focus entre la liste et le détail |
+| `Entrée`      | ouvrir la fiche en plein écran (`Entrée` ou `Esc` pour revenir) |
 | `?`           | aide : légende des couleurs et glossaire (CVE, GHSA, CWE, CVSS…) |
 | `Esc` / `Ctrl-C` | quitter (`Esc` ferme d'abord l'aide)       |
 
@@ -126,6 +127,18 @@ sévérité en couleur (`CRIT`, `HIGH`, `MED`, `LOW`), la source (`KEV`, `OSV`,
 `FR`, `IA`), l'identifiant et le titre. Quand une source ne fournit qu'un
 vecteur CVSS 3.x, le score est calculé et affiché dans le détail. Le détail
 donne aussi le nom en clair des CWE courantes.
+
+L'interface suit le fond du terminal (thème sombre ou clair) et le nombre de
+couleurs qu'il gère (16, 256 ou 16 millions). La couleur d'accent (badge,
+barre de recherche, panneau actif) se change avec `VULNKB_ACCENT`, par exemple
+`VULNKB_ACCENT=#d97757 vulnkb`. Sur un terminal de moins de 100 colonnes, la
+liste et la fiche s'empilent.
+
+Les blocs de code des descriptions (PoC, extraits vulnérables, requêtes HTTP…)
+sont colorés selon leur langage, avec une marge `│` ; le langage est deviné
+quand la description ne l'indique pas. Le thème par défaut (`monokai`) convient
+aux terminaux sombres ; pour un terminal clair : `VULNKB_CODE_STYLE=github
+vulnkb` (autres thèmes : `dracula`, `nord`, `solarized-light`…).
 
 La recherche porte sur l'identifiant (CVE, GHSA… et leurs alias), le titre, le
 résumé, le composant, le type de faille (CWE pour OSV, risques pour le

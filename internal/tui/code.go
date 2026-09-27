@@ -21,6 +21,10 @@ var codeStyle = func() *chroma.Style {
 	return styles.Get("monokai")
 }()
 
+// codeFormatter produit les couleurs du code : 256 couleurs par défaut,
+// 16 millions si le terminal les gère (voir initTheme).
+var codeFormatter = formatters.TTY256
+
 var (
 	fenceOpenRe  = regexp.MustCompile("^\\s*(```|~~~)\\s*([\\w+#.-]*)[^`]*$")
 	fenceCloseRe = regexp.MustCompile("^\\s*(```|~~~)\\s*$")
@@ -105,7 +109,7 @@ func highlight(code, lang string) string {
 		return code
 	}
 	var sb strings.Builder
-	if err := formatters.TTY256.Format(&sb, codeStyle, it); err != nil {
+	if err := codeFormatter.Format(&sb, codeStyle, it); err != nil {
 		return code
 	}
 	return strings.TrimRight(sb.String(), "\n")

@@ -47,3 +47,12 @@ func TestDescribeCWEsAndPrimaryID(t *testing.T) {
 		t.Errorf("primaryID sans alias: %q", got)
 	}
 }
+
+func TestShortAliases(t *testing.T) {
+	if got := shortAliases("CERTFR-1 (CVE-1, CVE-2, CVE-3, CVE-4)", 2); got != "CERTFR-1 (CVE-1, CVE-2, … et 2 autres)" {
+		t.Errorf("shortAliases: %q", got)
+	}
+	if got := shortAliases("GHSA-x (CVE-1)", 2); got != "GHSA-x (CVE-1)" {
+		t.Errorf("shortAliases court: %q", got)
+	}
+}

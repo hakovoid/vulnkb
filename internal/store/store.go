@@ -619,6 +619,16 @@ func (s *Store) LastFetched(source string) (time.Time, error) {
 	return fromUnix(n.Int64), nil
 }
 
+// LastSync renvoie la date de la collecte la plus récente, toutes sources
+// confondues (zéro si la base est vide).
+func (s *Store) LastSync() (time.Time, error) {
+	var n sql.NullInt64
+	if err := s.db.QueryRow(`SELECT MAX(fetched) FROM advisories`).Scan(&n); err != nil || !n.Valid {
+		return time.Time{}, err
+	}
+	return fromUnix(n.Int64), nil
+}
+
 // Count renvoie le nombre total d'entrées stockées.
 func (s *Store) Count() (int, error) {
 	var n int

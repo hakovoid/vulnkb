@@ -6,19 +6,21 @@ import (
 	"testing"
 	"time"
 
+	tea "github.com/charmbracelet/bubbletea"
+
 	"vulnkb/internal/model"
 	"vulnkb/internal/store"
 )
 
-// navUI prépare une interface sur n entrées publiées un jour d'écart : le
-// rang k (0 = plus récente) correspond à l'entrée « E<n-1-k> ».
+// navUI prépare une interface de 120×40 sur n entrées publiées un jour
+// d'écart : le rang k (0 = plus récente) correspond à l'entrée « E<n-1-k> ».
 func navUI(t *testing.T, n int) *ui {
 	t.Helper()
-	st, err := store.Open(t.TempDir() + "/nav.db")
+	s, err := store.Open(t.TempDir() + "/nav.db")
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { st.Close() })
+	t.Cleanup(func() { s.Close() })
 	base := time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
 	var advs []model.Advisory
 	for i := 0; i < n; i++ {
@@ -28,91 +30,163 @@ func navUI(t *testing.T, n int) *ui {
 		}
 		advs = append(advs, model.Advisory{
 			ID: fmt.Sprintf("t:%d", i), Source: "osv", ExternalID: fmt.Sprintf("E%d", i),
-			Title: title, Published: base.AddDate(0, 0, i),
+			Title: title, Severity: "HIGH", FixedVersions: "lib 1.2.3", Published: base.AddDate(0, 0, i),
 		})
 	}
-	if _, err := st.Upsert(advs); err != nil {
+	if _, err := s.Upsert(advs); err != nil {
 		t.Fatal(err)
 	}
-	u := &ui{st: st, rows: 30, cols: 100, listH: 12, detH: 12}
-	u.total, _ = st.Count()
-	u.reload()
-	return u
+	m := newUI(s)
+	m.syncSearch = true
+	m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	return m
 }
 
-func selected(t *testing.T, u *ui) string {
+var specialKeys = map[string]tea.KeyType{
+	"up": tea.KeyUp, "down": tea.KeyDown, "pgup": tea.KeyPgUp, "pgdown": tea.KeyPgDown,
+	"home": tea.KeyHome, "end": tea.KeyEnd, "enter": tea.KeyEnter, "esc": tea.KeyEsc,
+	"tab": tea.KeyTab, "ctrl+g": tea.KeyCtrlG, "backspace": tea.KeyBackspace,
+}
+
+// press envoie des touches ; un nom de touche spéciale, sinon du texte tapé.
+func press(m *ui, keys ...string) (cmds []tea.Cmd) {
+	for _, k := range keys {
+		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(k)}
+		if t, ok := specialKeys[k]; ok {
+			msg = tea.KeyMsg{Type: t}
+		}
+		_, cmd := m.Update(msg)
+		cmds = append(cmds, cmd)
+	}
+	return cmds
+}
+
+func selected(t *testing.T, m *ui) string {
 	t.Helper()
-	a, ok := u.current()
+	a, ok := m.current()
 	if !ok {
-		t.Fatalf("aucune entrée sélectionnée (curseur %d, fenêtre %d+%d)", u.cursor, u.offset, len(u.results))
+		t.Fatalf("aucune entrée sélectionnée (curseur %d, fenêtre %d+%d)", m.cursor, m.offset, len(m.results))
 	}
 	return a.ExternalID
 }
 
-func press(u *ui, keys ...string) {
-	for _, k := range keys {
-		u.handle([]byte(k))
-	}
-}
-
 func TestGotoAndJumps(t *testing.T) {
-	u := navUI(t, 500)
-	if u.matches != 500 || len(u.results) != window {
-		t.Fatalf("chargement initial: %d résultats, %d en mémoire", u.matches, len(u.results))
+	m := navUI(t, 500)
+	if m.matches != 500 || len(m.results) != window || m.listH < 10 {
+		t.Fatalf("chargement initial: %d résultats, %d en mémoire, %d lignes", m.matches, len(m.results), m.listH)
 	}
 
-	press(u, "\x07", "4", "5", "x", "6", "\r") // Ctrl-G 456 (le x est ignoré)
-	if u.cursor != 455 || selected(t, u) != "E44" || u.gotoMode {
-		t.Errorf("Ctrl-G 456: curseur %d, entrée %s", u.cursor, selected(t, u))
+	press(m, "ctrl+g", "4", "5", "x", "6", "enter") // le x est ignoré
+	if m.cursor != 455 || selected(t, m) != "E44" || m.gotoMode {
+		t.Errorf("Ctrl-G 456: curseur %d, entrée %s", m.cursor, selected(t, m))
 	}
-	if u.top > u.cursor || u.cursor >= u.top+u.listH {
-		t.Errorf("sélection hors écran: top %d, curseur %d", u.top, u.cursor)
+	if m.top > m.cursor || m.cursor >= m.top+m.listH {
+		t.Errorf("sélection hors écran: top %d, curseur %d", m.top, m.cursor)
 	}
 
-	press(u, "\x1b[F") // Fin
-	if u.cursor != 499 || selected(t, u) != "E0" {
-		t.Errorf("Fin: curseur %d", u.cursor)
+	press(m, "end")
+	if m.cursor != 499 || selected(t, m) != "E0" {
+		t.Errorf("Fin: curseur %d", m.cursor)
 	}
-	press(u, "\x1b[H", "\x1b[6~") // Début puis PgDn
-	if u.cursor != u.listH-1 || selected(t, u) != fmt.Sprintf("E%d", 499-(u.listH-1)) {
-		t.Errorf("PgDn: curseur %d", u.cursor)
+	press(m, "home", "pgdown")
+	if m.cursor != m.listH-1 || selected(t, m) != fmt.Sprintf("E%d", 499-(m.listH-1)) {
+		t.Errorf("PgDn: curseur %d", m.cursor)
 	}
-	press(u, "\x07", "9", "9", "9", "9", "\r") // au-delà du dernier : borné
-	if u.cursor != 499 {
-		t.Errorf("Ctrl-G trop grand: curseur %d", u.cursor)
+	press(m, "ctrl+g", "99999", "enter") // au-delà du dernier : borné
+	if m.cursor != 499 {
+		t.Errorf("Ctrl-G trop grand: curseur %d", m.cursor)
 	}
-	press(u, "\x07", "1", "\x1b") // Esc annule
-	if u.cursor != 499 || u.gotoMode {
-		t.Errorf("Esc n'annule pas: curseur %d", u.cursor)
+	press(m, "ctrl+g", "1", "esc") // Esc annule
+	if m.cursor != 499 || m.gotoMode {
+		t.Errorf("Esc n'annule pas: curseur %d", m.cursor)
 	}
 }
 
 func TestSearchResetsPosition(t *testing.T) {
-	u := navUI(t, 500)
-	press(u, "\x1b[F")
-	press(u, "s", "p", "é", "c", "i", "a", "l", "e")
-	if u.matches != 50 || u.cursor != 0 {
-		t.Fatalf("recherche: %d résultats, curseur %d", u.matches, u.cursor)
+	m := navUI(t, 500)
+	press(m, "end", "spéciale")
+	if m.matches != 50 || m.cursor != 0 || m.input.Value() != "spéciale" {
+		t.Fatalf("recherche: %d résultats, curseur %d, saisie %q", m.matches, m.cursor, m.input.Value())
 	}
-	press(u, "\x1b[F")
-	if u.cursor != 49 || !strings.HasPrefix(selected(t, u), "E") {
-		t.Errorf("Fin sur recherche: curseur %d", u.cursor)
+	press(m, "end")
+	if m.cursor != 49 {
+		t.Errorf("Fin sur recherche: curseur %d", m.cursor)
+	}
+	press(m, "backspace")
+	if m.input.Value() != "spécial" || m.cursor != 0 {
+		t.Errorf("retour arrière: %q, curseur %d", m.input.Value(), m.cursor)
 	}
 }
 
-func TestRenderShowsPosition(t *testing.T) {
-	u := navUI(t, 500)
-	press(u, "\x07", "2", "3", "4", "\r")
-	var b strings.Builder
-	u.listH = 12
-	u.renderList(&b, u.listH)
-	if !strings.Contains(b.String(), "E266") { // rang 233 -> E266
-		t.Errorf("ligne sélectionnée absente du rendu:\n%s", b.String())
+func TestStaleSearchIgnored(t *testing.T) {
+	m := navUI(t, 50)
+	m.syncSearch = false
+	press(m, "s")
+	old := runSearch(m.st, m.seq-1, "ancienne")
+	m.Update(old)
+	if m.query == "ancienne" {
+		t.Error("réponse d'une recherche périmée appliquée")
+	}
+	m.Update(runSearch(m.st, m.seq, "spéciale"))
+	if m.query != "spéciale" || m.matches != 5 {
+		t.Errorf("réponse courante non appliquée: %q, %d", m.query, m.matches)
+	}
+}
+
+func TestModesAndQuit(t *testing.T) {
+	m := navUI(t, 50)
+	press(m, "enter")
+	if !m.zoom {
+		t.Fatal("Entrée n'ouvre pas la fiche")
+	}
+	if cmds := press(m, "esc"); m.zoom || cmds[0] != nil {
+		t.Error("Esc en plein écran doit revenir à la liste, pas quitter")
+	}
+	press(m, "?")
+	if !m.help {
+		t.Fatal("? n'ouvre pas l'aide")
+	}
+	press(m, "esc")
+	if m.help {
+		t.Error("Esc ne ferme pas l'aide")
+	}
+	cmds := press(m, "esc")
+	if cmds[0] == nil {
+		t.Fatal("Esc ne quitte pas")
+	}
+	if _, ok := cmds[0]().(tea.QuitMsg); !ok {
+		t.Error("Esc ne renvoie pas tea.Quit")
+	}
+}
+
+func TestViewRendersLayout(t *testing.T) {
+	m := navUI(t, 500)
+	press(m, "ctrl+g", "234", "enter")
+	v := m.View()
+	for _, want := range []string{"vulnkb", "résultat 234", "/ 500", "RÉSULTATS", "DÉTAIL", "E266", "ÉLEVÉ",
+		"Corrigé dans", "lib 1.2.3", "ouvrir la fiche"} {
+		if !strings.Contains(stripANSI(v), want) {
+			t.Errorf("rendu sans %q", want)
+		}
+	}
+	lines := strings.Split(v, "\n")
+	if len(lines) != 40 {
+		t.Errorf("rendu de %d lignes pour un terminal de 40", len(lines))
+	}
+	for i, l := range lines {
+		if w := visibleLen(l); w > 120 {
+			t.Errorf("ligne %d trop large (%d colonnes): %q", i, w, stripANSI(l))
+		}
+	}
+
+	m.Update(tea.WindowSizeMsg{Width: 80, Height: 30}) // terminal étroit : panneaux empilés
+	if v := m.View(); len(strings.Split(v, "\n")) != 30 || !strings.Contains(stripANSI(v), "DÉTAIL") {
+		t.Errorf("rendu étroit incorrect:\n%s", stripANSI(v))
 	}
 	if got := fmtInt(23456); got != "23 456" {
 		t.Errorf("fmtInt: %q", got)
 	}
-	if got := fmtInt(999); got != "999" {
-		t.Errorf("fmtInt: %q", got)
+	if got := syncAge(time.Now().Add(-2*time.Hour-time.Minute), time.Now()); got != "il y a 2 h" {
+		t.Errorf("syncAge: %q", got)
 	}
 }

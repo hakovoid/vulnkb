@@ -9,19 +9,6 @@ import (
 	"vulnkb/internal/store"
 )
 
-const (
-	red     = "\x1b[31m"
-	boldRed = "\x1b[1;31m"
-	orange  = "\x1b[38;5;208m"
-	yellow  = "\x1b[33m"
-	magenta = "\x1b[35m"
-	blue    = "\x1b[34m"
-	green   = "\x1b[32m"
-	gray    = "\x1b[90m"
-
-	inlineCode = "\x1b[38;5;180m"
-)
-
 // severity est la gravité normalisée (voir model.ParseSeverity), avec ses
 // attributs d'affichage.
 type severity struct {
