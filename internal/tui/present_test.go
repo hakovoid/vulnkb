@@ -56,3 +56,14 @@ func TestShortAliases(t *testing.T) {
 		t.Errorf("shortAliases court: %q", got)
 	}
 }
+
+func TestShortRemediation(t *testing.T) {
+	cisa := "Apply mitigations in accordance with vendor instructions, ensuring compliance with CISA’s BOD 26-04 guidance. Discontinue use if unavailable."
+	if got := shortRemediation(cisa); !strings.Contains(got, "éditeur") || strings.Contains(got, "BOD") {
+		t.Errorf("boilerplate non raccourci: %q", got)
+	}
+	own := "Mettre à jour gitea.dev en 1.27.1 ou plus."
+	if shortRemediation(own) != own {
+		t.Errorf("remédiation propre modifiée: %q", shortRemediation(own))
+	}
+}

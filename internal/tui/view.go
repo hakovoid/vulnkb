@@ -353,7 +353,7 @@ func (m *ui) detailLines(a model.Advisory, w int) []string {
 	if a.FixedVersions != "" {
 		kv("Corrigé dans", sty.green.Render(a.FixedVersions))
 	}
-	kv("Remédiation", a.Remediation)
+	kv("Remédiation", shortRemediation(a.Remediation))
 	if !a.Published.IsZero() {
 		kv("Publié", a.Published.Format("2006-01-02"))
 	}

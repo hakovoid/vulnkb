@@ -59,6 +59,17 @@ func describeNVD(c model.CVSS, nCVEs int) string {
 	return txt + reset
 }
 
+// shortRemediation remplace le long paragraphe générique de CISA KEV (« Apply
+// mitigations in accordance with vendor instructions… BOD 26-04… ») par une
+// consigne courte en français ; les autres remédiations sont laissées telles
+// quelles.
+func shortRemediation(s string) string {
+	if strings.Contains(s, "BOD ") && strings.Contains(s, "vendor instructions") {
+		return "Appliquer les correctifs ou mesures de l'éditeur (voir Références) ; à défaut, cesser d'utiliser le produit."
+	}
+	return s
+}
+
 // describeFilters résume les filtres reconnus dans la saisie, pour que
 // l'utilisateur voie ce qui est réellement appliqué.
 func describeFilters(q store.Query) string {
