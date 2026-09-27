@@ -210,6 +210,7 @@ Commandes en ligne (hors TUI) :
 ./vulnkb sync osv-npm    # collecte une source précise
 ./vulnkb sources         # liste les sources enregistrées
 ./vulnkb add <url>       # ajoute un article via Ollama (voir ci-dessous)
+./vulnkb glossaire       # glossaire : tous les acronymes définis en français
 ./vulnkb tui             # interface de recherche (= ./vulnkb sans argument)
 ```
 

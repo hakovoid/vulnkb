@@ -22,6 +22,7 @@ import (
 
 	"vulnkb/internal/exploits"
 	"vulnkb/internal/extract"
+	"vulnkb/internal/glossary"
 	"vulnkb/internal/model"
 	"vulnkb/internal/nvd"
 	"vulnkb/internal/source"
@@ -56,6 +57,9 @@ func run() error {
 		return sync(st, args)
 	case "watch":
 		return watchCmd(args)
+	case "glossaire", "glossary", "glossaire.md":
+		printGlossary()
+		return nil
 	case "sources":
 		for _, s := range source.All() {
 			if source.IsOptional(s) {
@@ -72,7 +76,7 @@ func run() error {
 	case "tui":
 		return tui.Run(st)
 	default:
-		return fmt.Errorf("commande inconnue %q (sync | sources | add | watch | tui)", cmd)
+		return fmt.Errorf("commande inconnue %q (sync | sources | add | watch | glossaire | tui)", cmd)
 	}
 }
 
@@ -140,6 +144,17 @@ func writeWatchlist(path string, terms []string) error {
 		body += t + "\n"
 	}
 	return os.WriteFile(path, []byte(body), 0o644)
+}
+
+// printGlossary affiche le glossaire complet des acronymes et notions.
+func printGlossary() {
+	fmt.Println("Glossaire vulnkb — acronymes et notions")
+	for _, sec := range glossary.Sections() {
+		fmt.Printf("\n\033[1m%s\033[0m\n", sec.Title)
+		for _, t := range sec.Terms {
+			fmt.Printf("  \033[36m%-16s\033[0m %s\n", t.Name, t.Def)
+		}
+	}
 }
 
 func watchlistPath() string {

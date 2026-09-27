@@ -195,6 +195,8 @@ func helpLines() []string {
 		"  RUSTSEC-         d'une même faille sont listés entre parenthèses",
 		"  CERTFR-…-AVI     avis du CERT-FR ; CERTFR-…-ALE pour une alerte (menace active)",
 		"",
+		sty.faint.Render("  Glossaire complet de tous les acronymes : ") + labelColor + "vulnkb glossaire" + reset,
+		"",
 		bold + "Notions" + reset,
 		"  CWE              catégorie de faiblesse (CWE-79 = XSS) ; son nom s'affiche dans le détail",
 		"  CVSS             score de gravité de 0 à 10, calculé à partir d'un vecteur :",
