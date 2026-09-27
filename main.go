@@ -182,8 +182,12 @@ func sync(st *store.Store, names []string) error {
 
 	for _, s := range srcs {
 		fmt.Printf("→ %s… ", s.Name())
+		var since time.Time
+		if source.IsIncremental(s) {
+			since, _ = st.LastFetched(s.Name())
+		}
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
-		advs, err := s.Fetch(ctx, time.Time{})
+		advs, err := s.Fetch(ctx, since)
 		cancel()
 		if err != nil {
 			fmt.Printf("échec: %v\n", err)

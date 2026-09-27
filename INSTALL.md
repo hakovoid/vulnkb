@@ -16,7 +16,8 @@ retrouver une info en quelques frappes.
   - Debian/Ubuntu : `sudo apt install build-essential`
   - Fedora : `sudo dnf install gcc`
 - **Accès réseau** vers GitHub (dépendances) et vers les sources de données
-  (`cisa.gov` et `osv-vulnerabilities.storage.googleapis.com`).
+  (`cisa.gov`, `osv-vulnerabilities.storage.googleapis.com` et
+  `www.cert.ssi.gouv.fr`).
 
 ---
 
@@ -50,8 +51,9 @@ CGO_ENABLED=1 go test -tags sqlite_fts5 ./...   # doit afficher "ok"
   ```sh
   GOPROXY=direct GOSUMDB=off go mod tidy
   ```
-- Pour la collecte, autorise `cisa.gov` et
-  `osv-vulnerabilities.storage.googleapis.com` en sortie, ou ajoute une source
+- Pour la collecte, autorise `cisa.gov`,
+  `osv-vulnerabilities.storage.googleapis.com` et `www.cert.ssi.gouv.fr` en
+  sortie, ou ajoute une source
   interne à ton réseau (voir §5).
 
 ---
@@ -71,10 +73,15 @@ Sources disponibles :
   OSV.dev, avec versions affectées, version corrective, CWE et liens.
 - `osv-npm` : **à la demande** (export d'environ 200 Mo), à lancer avec
   `./vulnkb sync osv-npm`.
+- `certfr` : avis et alertes du CERT-FR, en français. Première collecte sur
+  les 365 derniers jours (environ 1 500 bulletins, une dizaine de secondes) ;
+  les suivantes ne reprennent que les bulletins révisés depuis. Pour remonter
+  plus loin, par exemple 5 ans, avant la première collecte :
+  `VULNKB_CERTFR_DAYS=1825 ./vulnkb sync certfr`.
 
-Ordre de grandeur : un `sync` complet prend une dizaine de secondes sur une
-bonne connexion, pour environ 29 000 entrées (36 000 avec npm) et une base de
-100 à 120 Mo.
+Ordre de grandeur : un premier `sync` complet prend une vingtaine de secondes
+sur une bonne connexion, pour environ 30 500 entrées (37 500 avec npm) et une
+base de 100 à 130 Mo.
 
 `sync` affiche le nombre d'entrées récupérées par source et le total en base.
 À relancer quand tu veux rafraîchir (l'insertion est idempotente : pas de
@@ -193,7 +200,7 @@ nomme (`vulnkb sync ma-source`). Pistes : NVD (CVSS/CWE), flux RSS d'éditeurs.
 | `no such module fts5` / erreur à la création de la base | tag de build oublié | recompiler avec `-tags sqlite_fts5` |
 | erreur cgo / `gcc: command not found` | pas de compilateur C | installer build-essential / Xcode CLT |
 | `403 Forbidden` sur `go mod tidy` | proxy Go bloqué | `GOPROXY=direct GOSUMDB=off go mod tidy` |
-| `sync` échoue en `Forbidden` | `cisa.gov` ou le bucket OSV bloqué en sortie | autoriser le domaine, ou ajouter une source interne |
+| `sync` échoue en `Forbidden` | `cisa.gov`, le bucket OSV ou le CERT-FR bloqué en sortie | autoriser le domaine, ou ajouter une source interne |
 | `add` : « Ollama injoignable » | Ollama arrêté | `cd ~/kuro_apps/ollama && docker compose up -d` |
 | `add` : `model "…" not found` | modèle non téléchargé | `docker exec ollama-shared ollama pull <modèle>` |
 | `add` : fiche en anglais ou incomplète | modèle trop petit | réessayer avec `-model qwen2.5-coder:14b` |

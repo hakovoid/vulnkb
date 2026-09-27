@@ -215,6 +215,17 @@ func (s *Store) CVEIndex(source string) (map[string][]Ref, error) {
 // CVEs renvoie les identifiants CVE présents dans une chaîne.
 func CVEs(s string) []string { return cveRe.FindAllString(s, -1) }
 
+// LastFetched renvoie la date de la collecte la plus récente d'une source
+// (zéro si elle n'a jamais été collectée).
+func (s *Store) LastFetched(source string) (time.Time, error) {
+	var n sql.NullInt64
+	err := s.db.QueryRow(`SELECT MAX(fetched) FROM advisories WHERE source = ?`, source).Scan(&n)
+	if err != nil || !n.Valid {
+		return time.Time{}, err
+	}
+	return fromUnix(n.Int64), nil
+}
+
 // Count renvoie le nombre total d'entrées stockées.
 func (s *Store) Count() (int, error) {
 	var n int

@@ -29,6 +29,13 @@ CGO_ENABLED=1 go build -tags sqlite_fts5 -o vulnkb .   # compile
 | `cisa-kev` | CVE activement exploitées (catalogue CISA KEV) | oui |
 | `osv-go`, `osv-pypi`, `osv-packagist`, `osv-crates`, `osv-maven` | advisories OSV.dev par écosystème : versions affectées et corrigées, CWE, liens | oui |
 | `osv-npm` | advisories OSV.dev npm (export de ~200 Mo) | non, `vulnkb sync osv-npm` |
+| `certfr` | avis et alertes du CERT-FR (ANSSI), **en français** : systèmes affectés, risques, solution, CVE | oui |
+
+`certfr` est incrémentale : la première collecte prend les bulletins révisés
+sur les 365 derniers jours (`VULNKB_CERTFR_DAYS` pour changer la fenêtre), les
+suivantes seulement ce qui a changé depuis. Dans la TUI, une entrée CISA ou
+OSV dont un CVE est couvert par un avis CERT-FR affiche un renvoi vers cet
+avis.
 
 Les entrées OSV `MAL-*` (paquets malveillants) et les advisories retirés sont
 ignorés ; une même faille publiée sous plusieurs identifiants (GHSA / GO /
@@ -57,8 +64,8 @@ passer de la liste au détail, `esc` (ou Ctrl-C) pour quitter.
 
 La base est stockée dans `~/.config/vulnkb/vulnkb.db` (ou le dossier courant).
 
-> Note réseau : la collecte contacte `cisa.gov` et
-> `osv-vulnerabilities.storage.googleapis.com`, et `go mod tidy` récupère les
+> Note réseau : la collecte contacte `cisa.gov`,
+> `osv-vulnerabilities.storage.googleapis.com` et `www.cert.ssi.gouv.fr`, et `go mod tidy` récupère les
 > modules. Si ton environnement filtre les sorties réseau (proxy/allowlist),
 > autorise ces domaines et le proxy Go, ou utilise `GOPROXY=direct` pour tirer
 > les dépendances GitHub.

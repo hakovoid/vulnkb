@@ -35,6 +35,19 @@ func IsOptional(s Source) bool {
 	return ok && o.Optional()
 }
 
+// Incremental est implémentée par les sources qui savent ne collecter que
+// les nouveautés : le sync leur passe la date de leur dernière collecte.
+// Elles doivent enregistrer leurs entrées sous Source == Name().
+type Incremental interface {
+	Incremental() bool
+}
+
+// IsIncremental indique si la source tient compte de la dernière collecte.
+func IsIncremental(s Source) bool {
+	i, ok := s.(Incremental)
+	return ok && i.Incremental()
+}
+
 // Defaults renvoie les sources collectées par un sync sans argument.
 func Defaults() []Source {
 	var out []Source
