@@ -23,6 +23,8 @@ type Query struct {
 	Severities []int    // niveaux model.Sev*
 	Sources    []string // valeurs de la colonne source
 	Exploited  bool
+	Watch      []string // termes de la liste de surveillance (filtre « mes »)
+	WatchReq   bool     // « mes » demandé (même si la liste est vide)
 	Invalid    []string // filtres non reconnus
 }
 
@@ -54,6 +56,9 @@ func ParseQuery(raw string) Query {
 		switch {
 		case !hasColon && (k == "exploitee" || k == "exploitees" || k == "exploited"):
 			q.Exploited = true
+		case !hasColon && (k == "mes" || k == "watch" || k == "surveille" || k == "surveilles"):
+			q.WatchReq = true
+			q.Watch = Watchlist()
 		case hasColon && (k == "sev" || k == "severite"):
 			ok := val != ""
 			for _, v := range strings.Split(fold(val), ",") {
@@ -103,7 +108,45 @@ func ParseQuery(raw string) Query {
 
 // HasFilters indique si la requête restreint autre chose que le texte.
 func (q Query) HasFilters() bool {
-	return len(q.Severities) > 0 || len(q.Sources) > 0 || q.Exploited
+	return len(q.Severities) > 0 || len(q.Sources) > 0 || q.Exploited || q.WatchReq
+}
+
+// Impossible est vrai quand la requête ne peut renvoyer aucun résultat :
+// « mes » demandé alors que la liste de surveillance est vide.
+func (q Query) Impossible() bool {
+	return q.WatchReq && len(q.Watch) == 0
+}
+
+// matchExpr assemble la requête plein-texte : texte libre et, pour « mes »,
+// les termes surveillés (recherchés dans l'identifiant, le titre et le
+// composant). Vide si la recherche ne porte que sur des filtres SQL.
+func (q Query) matchExpr() string {
+	text := ftsQuery(q.Text)
+	watch := watchExpr(q.Watch)
+	switch {
+	case watch != "" && text != "":
+		return watch + " AND (" + text + ")"
+	case watch != "":
+		return watch
+	default:
+		return text
+	}
+}
+
+// watchExpr construit l'expression FTS des termes surveillés, restreinte aux
+// colonnes identifiant / titre / composant.
+func watchExpr(terms []string) string {
+	var parts []string
+	for _, t := range terms {
+		t = strings.TrimSpace(strings.ReplaceAll(t, `"`, ""))
+		if t != "" {
+			parts = append(parts, `"`+t+`"*`)
+		}
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return "{external_id title component}:(" + strings.Join(parts, " OR ") + ")"
 }
 
 // fold met en minuscules et retire les accents courants du français.

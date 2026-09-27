@@ -463,10 +463,14 @@ func (s *Store) SearchPage(query string, offset, limit int) ([]model.Advisory, e
 	if limit <= 0 {
 		limit = 50
 	}
+	q := ParseQuery(query)
+	if q.Impossible() {
+		return nil, nil
+	}
 	// Deux temps : les identifiants de la page d'abord, puis le détail de ces
 	// seules entrées. En une requête, SQLite calculerait le score NVD de
 	// toutes les entrées filtrées avant de trier.
-	from, order, args := searchFrom(ParseQuery(query))
+	from, order, args := searchFrom(q)
 	args = append(args, limit, max(0, offset))
 	idRows, err := s.db.Query(`SELECT a.id `+from+` ORDER BY `+order+` LIMIT ? OFFSET ?`, args...)
 	if err != nil {
@@ -556,22 +560,29 @@ func (s *Store) SetMeta(key, value string) error {
 
 // CountMatches renvoie le nombre total de résultats d'une recherche.
 func (s *Store) CountMatches(query string) (int, error) {
-	from, _, args := searchFrom(ParseQuery(query))
+	q := ParseQuery(query)
+	if q.Impossible() {
+		return 0, nil
+	}
+	from, _, args := searchFrom(q)
 	var n int
 	err := s.db.QueryRow(`SELECT COUNT(*) `+from, args...).Scan(&n)
 	return n, err
 }
 
-// searchFrom renvoie les clauses FROM/WHERE et ORDER BY d'une recherche.
+// searchFrom renvoie les clauses FROM/WHERE et ORDER BY d'une recherche. La
+// recherche plein-texte réunit le texte libre et, le cas échéant, le filtre
+// « mes » (les entrées mentionnant un produit surveillé).
 func searchFrom(q Query) (from, order string, args []any) {
 	filter, fargs := q.where()
-	if strings.TrimSpace(q.Text) == "" {
+	match := q.matchExpr()
+	if match == "" {
 		return `FROM advisories a WHERE 1=1` + filter, `a.published DESC, a.id`, fargs
 	}
 	// CROSS JOIN impose de partir de l'index plein-texte : sinon SQLite peut
 	// parcourir toutes les entrées visibles et interroger l'index pour chacune.
 	return `FROM advisories_fts f CROSS JOIN advisories a ON a.rowid = f.rowid
-WHERE advisories_fts MATCH ?` + filter, `f.rank, a.id`, append([]any{ftsQuery(q.Text)}, fargs...)
+WHERE advisories_fts MATCH ?` + filter, `f.rank, a.id`, append([]any{match}, fargs...)
 }
 
 // Ref désigne brièvement une entrée, pour les renvois entre sources.

@@ -82,9 +82,15 @@ func describeFilters(q store.Query) string {
 	if q.Exploited {
 		parts = append(parts, boldRed+"exploitées"+reset+dim)
 	}
+	if q.WatchReq && len(q.Watch) > 0 {
+		parts = append(parts, fmt.Sprintf("%ssurveillés%s (%d)", blue, reset+dim, len(q.Watch)))
+	}
 	out := ""
 	if len(parts) > 0 {
 		out = dim + "   filtres : " + strings.Join(parts, " · ") + reset
+	}
+	if q.WatchReq && len(q.Watch) == 0 {
+		out += "   " + red + "liste de surveillance vide" + reset + dim + " (vulnkb watch add …)" + reset
 	}
 	if len(q.Invalid) > 0 {
 		out += "   " + red + "filtre non reconnu : " + strings.Join(q.Invalid, " ") + reset + dim + " (? aide)" + reset

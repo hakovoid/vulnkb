@@ -2,6 +2,7 @@ package store
 
 import (
 	"database/sql"
+	"os"
 	"reflect"
 	"strings"
 	"testing"
@@ -273,5 +274,69 @@ func TestNVDShadowing(t *testing.T) {
 	}
 	if res, _ := st.Search("gitea", 5); len(res) != 1 || res[0].Source != "nvd" {
 		t.Errorf("gitea après suppression: %+v", res)
+	}
+}
+
+func TestWatchFilter(t *testing.T) {
+	st, err := Open(t.TempDir() + "/w.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	_, err = st.Upsert([]model.Advisory{
+		{ID: "osv:1", Source: "osv", ExternalID: "GHSA-a (CVE-2026-1)", Title: "Nginx DoS", Component: "Go nginx-ui", Severity: "HIGH"},
+		{ID: "osv:2", Source: "osv", ExternalID: "GHSA-b", Title: "SQL injection", Component: "PyPI vtiger-connector", Severity: "CRITICAL"},
+		{ID: "osv:3", Source: "osv", ExternalID: "GHSA-c", Title: "XSS in Wordpress", Component: "wordpress", Severity: "MEDIUM"},
+		{ID: "certfr:X", Source: "certfr", ExternalID: "CERTFR-2026-AVI-1", Title: "Vulnérabilité dans F5 NGINX", Component: "F5 NGINX"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// liste vide : « mes » ne renvoie rien
+	SetWatchlist(nil)
+	if q := ParseQuery("mes"); !q.Impossible() {
+		t.Error("mes sans liste devrait être impossible")
+	}
+	if n, _ := st.CountMatches("mes"); n != 0 {
+		t.Errorf("mes sans liste: %d résultats", n)
+	}
+
+	SetWatchlist([]string{"nginx", "vtiger"})
+	defer SetWatchlist(nil)
+	cases := map[string]int{
+		"mes":           3, // les deux nginx + vtiger
+		"mes sev:crit":  1, // vtiger uniquement
+		"mes src:fr":    1, // l'avis CERT-FR NGINX
+		"mes wordpress": 0, // wordpress n'est pas surveillé
+		"mes dos":       1, // nginx DoS
+	}
+	for query, want := range cases {
+		n, err := st.CountMatches(query)
+		if err != nil {
+			t.Fatalf("%q: %v", query, err)
+		}
+		res, _ := st.Search(query, 50)
+		if n != len(res) {
+			t.Errorf("%q: count %d ≠ %d résultats", query, n, len(res))
+		}
+		if n != want {
+			t.Errorf("%q: %d résultats, attendu %d", query, n, want)
+		}
+	}
+}
+
+func TestLoadWatchlist(t *testing.T) {
+	path := t.TempDir() + "/watch.txt"
+	os.WriteFile(path, []byte("# commentaire\nnginx\n\n  vtiger  \n"), 0o644)
+	n, err := LoadWatchlist(path)
+	if err != nil || n != 2 {
+		t.Fatalf("LoadWatchlist: %d (%v)", n, err)
+	}
+	if got := Watchlist(); len(got) != 2 || got[0] != "nginx" || got[1] != "vtiger" {
+		t.Errorf("Watchlist: %q", got)
+	}
+	if n, err := LoadWatchlist(path + ".absent"); err != nil || n != 0 || len(Watchlist()) != 0 {
+		t.Errorf("fichier absent mal géré: %d (%v)", n, err)
 	}
 }

@@ -158,8 +158,26 @@ Des filtres se combinent au texte :
 | `sev:high+` | cette sévérité ou plus grave |
 | `src:kev` | une source (`kev`, `osv`, `fr`, `nvd`, `ia`) ; `src:kev,fr` pour plusieurs |
 | `exploitee` | failles exploitées activement : CVE présent dans CISA KEV, toutes sources confondues |
+| `mes` | seulement les produits de ta liste de surveillance (voir ci-dessous) |
 
-Exemples : `nginx sev:high+ src:osv`, `exploitee src:fr`, `sev:crit gitea`.
+Exemples : `nginx sev:high+ src:osv`, `exploitee src:fr`, `sev:crit gitea`,
+`mes exploitee`.
+
+### Liste de surveillance (filtre `mes`)
+
+Tu peux suivre les produits qui te concernent (tes apps, tes dépendances) et
+les retrouver d'un filtre :
+
+```sh
+vulnkb watch                         # affiche la liste et son fichier
+vulnkb watch add nginx vtiger koai   # ajoute des produits (ou mots-clés)
+vulnkb watch rm koai                 # en retire
+```
+
+La liste est un simple fichier `~/.config/vulnkb/watch.txt` (un terme par
+ligne, éditable à la main). Dans la recherche, `mes` ne montre que les entrées
+dont l'identifiant, le titre ou le composant contient un de ces termes ;
+`mes sev:high+` ou `mes exploitee` combinent avec les autres filtres.
 Les filtres reconnus s'affichent à droite de la saisie ; un filtre mal écrit
 est signalé en rouge.
 
