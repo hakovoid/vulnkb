@@ -171,7 +171,7 @@ func (m *ui) statusView(w int) string {
 		items = []kv{{"↑↓ pgup pgdn", "défiler"}, {"entrée esc", "revenir à la liste"}, {"? ", "aide"}}
 	default:
 		items = []kv{{"↑↓", "naviguer"}, {"tab", "détail"}, {"entrée", "fiche"}, {"alt+t", "mes"},
-			{"alt+o", "tri"}, {"alt+g", "n°"}, {"alt+s", "sources"}, {"alt+y", "thème"}, {"?", "aide"}, {"esc", "quitter"}}
+			{"alt+o", "tri"}, {"alt+g", "n°"}, {"alt+r", "rapport"}, {"alt+s", "sources"}, {"alt+y", "thème"}, {"?", "aide"}, {"esc", "quitter"}}
 	}
 	var parts []string
 	if m.flash != "" {

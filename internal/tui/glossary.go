@@ -160,6 +160,8 @@ func helpLines() []string {
 		"  Alt-O / Ctrl-O   changer le tri : pertinence → date → criticité → EPSS",
 		"  Alt-Y / Ctrl-Y   changer le thème de couleurs (bleu, rose, vert, cyan, violet, orange)",
 		"  Alt-S            liste des sources : contenu, nombre d'entrées, dernière collecte",
+		"  Alt-E            exporter la fiche affichée en HTML (dossier ~/vulnkb-exports)",
+		"  Alt-R            exporter en HTML tous les résultats de la recherche (rapport, 1 000 fiches max)",
 		"  Alt-← / Alt-→    élargir / rétrécir le panneau liste (aussi Ctrl, ou glisser à la souris)",
 		"  molette          faire défiler la liste ou le détail selon le panneau survolé",
 		"  Alt-M            rendre la souris au terminal (clic sur les liens, sélection), et inversement",

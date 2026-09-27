@@ -137,6 +137,8 @@ Lance `./vulnkb` (ou `./vulnkb tui`).
 | `Alt-O` / `Ctrl-O` | changer le tri : pertinence → date → criticité → EPSS |
 | `Alt-Y` / `Ctrl-Y` | changer le thème de couleurs (mémorisé) |
 | `Alt-S`       | liste des sources : contenu, nombre d'entrées, dernière collecte |
+| `Alt-E`       | exporter la fiche affichée en HTML |
+| `Alt-R`       | exporter en HTML tous les résultats de la recherche (rapport) |
 | `Alt-M`       | rendre la souris au terminal (clic sur les liens, sélection de texte), et inversement |
 | `Alt-←` / `Alt-→` | rétrécir / élargir le panneau liste (aussi `Ctrl`, ou glisser la séparation à la souris) |
 | molette       | faire défiler la liste ou le détail selon le panneau survolé |
@@ -264,6 +266,29 @@ Commandes en ligne (hors TUI) :
 ./vulnkb info            # aperçu : taille de la base, entrées par source
 ./vulnkb tui             # interface de recherche (= ./vulnkb sans argument)
 ```
+
+### Exporter en HTML
+
+Une fiche ou une recherche entière s'exporte dans un fichier HTML autonome,
+lisible hors ligne dans n'importe quel navigateur, imprimable, et qui suit le
+thème clair ou sombre du navigateur :
+
+- dans l'interface : `Alt-E` exporte la fiche affichée, `Alt-R` tous les
+  résultats de la recherche en cours, dans l'ordre du tri courant ;
+- en ligne de commande, avec les mêmes filtres :
+
+```sh
+vulnkb export mes sev:high+                  # tes produits, sévérité élevée ou critique
+vulnkb export -tri epss mes epss:10          # tes produits les plus menacés, triés par EPSS
+vulnkb export -o ~/rapport.html exploitee src:fr   # fichier choisi
+```
+
+Le rapport commence par des compteurs (sévérités, exploitées, exploit
+public, EPSS ≥ 10 %) et un sommaire, puis donne chaque fiche avec son bloc
+« Que faire », ses scores, ses exploits publics, ses avis CERT-FR et ses
+références cliquables. 1 000 fiches au plus ; les fichiers vont dans
+`~/vulnkb-exports` (ou `VULNKB_EXPORT_DIR`). Le contenu des sources est
+échappé : un texte piégé ne peut rien exécuter dans le navigateur.
 
 ### Ajouter un article ou un texte (extraction IA)
 

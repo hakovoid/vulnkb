@@ -27,6 +27,7 @@ CGO_ENABLED=1 go build -tags sqlite_fts5 -o vulnkb .   # compile
 ./vulnkb add <url|fichier|->  # ajoute un article ou un texte via Ollama
 ./vulnkb glossaire       # définitions FR de tous les acronymes
 ./vulnkb info            # aperçu : taille de la base, entrées par source
+./vulnkb export mes sev:high+   # rapport HTML d'une recherche (Alt-R / Alt-E dans la TUI)
 ./vulnkb theme rose      # thème de couleurs : bleu, rose, vert, cyan, violet, orange (Ctrl-Y dans la TUI)
 ./vulnkb                 # lance la TUI de recherche (commande par défaut)
 ```

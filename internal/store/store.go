@@ -551,7 +551,7 @@ func (s *Store) SearchPageSorted(query string, sort Sort, offset, limit int) ([]
 	rows, err := s.db.Query(`
 SELECT a.id, a.source, a.external_id, a.title, a.summary, a.component, a.vuln_type,
        a.severity, a.affected_versions, a.fixed_versions, a.remediation, a.references_json,
-       a.published, a.fetched, a.url, a.epss, a.epss_pct, `+bestNVD+`
+       a.published, a.fetched, a.url, a.epss, a.epss_pct, a.exploited, a.has_exploit, `+bestNVD+`
 FROM advisories a WHERE a.id IN (`+placeholders(len(ids))+`)`, ids...)
 	if err != nil {
 		return nil, err
@@ -949,7 +949,7 @@ func scan(rows *sql.Rows) ([]model.Advisory, error) {
 		if err := rows.Scan(
 			&a.ID, &a.Source, &a.ExternalID, &a.Title, &a.Summary, &a.Component,
 			&a.VulnType, &a.Severity, &a.AffectedVersions, &a.FixedVersions,
-			&remediation, &refs, &pub, &fetched, &a.URL, &a.EPSS, &a.EPSSPercentile, &nvd,
+			&remediation, &refs, &pub, &fetched, &a.URL, &a.EPSS, &a.EPSSPercentile, &a.Exploited, &a.HasExploit, &nvd,
 		); err != nil {
 			return nil, err
 		}

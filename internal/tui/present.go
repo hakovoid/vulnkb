@@ -111,6 +111,15 @@ func fmtPct(p float64) string {
 	return strings.Replace(t, ".", ",", 1) + " %"
 }
 
+// fmtPctile présente un centile : une décimale près du sommet, pour ne pas
+// arrondir 99,8 % à « 100 % ».
+func fmtPctile(p float64) string {
+	if v := p * 100; v >= 99 && v < 100 {
+		return strings.Replace(fmt.Sprintf("%.1f", v), ".", ",", 1) + " %"
+	}
+	return fmtPct(p)
+}
+
 // epssColor gradue la couleur d'une probabilité EPSS.
 func epssColor(p float64) string {
 	switch {
@@ -128,7 +137,7 @@ func epssColor(p float64) string {
 // describeEPSS présente le score EPSS d'une entrée pour la fiche.
 func describeEPSS(p, pct float64) string {
 	return bold + epssColor(p) + fmtPct(p) + reset + dim + " de probabilité d'exploitation sous 30 jours · plus menaçant que " +
-		fmtPct(pct) + " des CVE" + reset
+		fmtPctile(pct) + " des CVE" + reset
 }
 
 // exploitKinds nomme les origines d'exploit dans la fiche.

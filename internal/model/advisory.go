@@ -50,4 +50,10 @@ type Advisory struct {
 	// centile (rempli à la lecture).
 	EPSS           float64
 	EPSSPercentile float64
+
+	// Exploited : un CVE de l'entrée figure au catalogue CISA KEV ;
+	// HasExploit : un exploit ou une preuve de concept public existe
+	// (remplis à la lecture).
+	Exploited  bool
+	HasExploit bool
 }

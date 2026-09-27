@@ -63,8 +63,10 @@ func run() error {
 	case "glossaire", "glossary", "glossaire.md":
 		printGlossary()
 		return nil
-	case "info", "stats":
+	case "info":
 		return info(st)
+	case "export":
+		return exportCmd(st, args)
 	case "theme", "theme:":
 		return themeCmd(st, args)
 	case "sources":
@@ -77,8 +79,45 @@ func run() error {
 	case "tui":
 		return tui.Run(st)
 	default:
-		return fmt.Errorf("commande inconnue %q (sync | sources | add | watch | info | theme | glossaire | tui)", cmd)
+		return fmt.Errorf("commande inconnue %q (sync | sources | add | watch | export | info | stats | theme | glossaire | tui)", cmd)
 	}
+}
+
+// exportCmd écrit un rapport HTML des résultats d'une recherche (mêmes
+// filtres que dans l'interface : mes, sev:, src:, exploitee, exploit, epss:).
+func exportCmd(st *store.Store, args []string) error {
+	fs := flag.NewFlagSet("export", flag.ContinueOnError)
+	sortName := fs.String("tri", "", "ordre : pertinence, date, criticite, epss (défaut : pertinence, ou date sans texte)")
+	out := fs.String("o", "", "fichier de sortie (défaut : "+tui.ExportDir()+"/vulnkb-<recherche>-<date>.html)")
+	maxN := fs.Int("max", 1000, "nombre maximal de fiches (1000 au plus)")
+	fs.Usage = func() {
+		fmt.Fprintln(fs.Output(), "usage : vulnkb export [-tri mode] [-max N] [-o fichier] <recherche…>")
+		fmt.Fprintln(fs.Output(), "  exemple : vulnkb export -tri epss mes sev:high+")
+		fs.PrintDefaults()
+	}
+	if err := fs.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return nil
+		}
+		return err
+	}
+	sorts := map[string]store.Sort{"": store.SortAuto, "pertinence": store.SortAuto, "date": store.SortDate,
+		"criticite": store.SortSeverity, "criticité": store.SortSeverity, "epss": store.SortEPSS}
+	sort, ok := sorts[strings.ToLower(*sortName)]
+	if !ok {
+		return fmt.Errorf("tri inconnu %q (pertinence, date, criticite, epss)", *sortName)
+	}
+	query := strings.Join(fs.Args(), " ")
+	path, n, total, err := tui.ExportSearch(st, query, sort, *maxN, *out)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("%s fiche(s) exportée(s)", groupInt(n))
+	if total > n {
+		fmt.Printf(" sur %s résultats", groupInt(total))
+	}
+	fmt.Printf(" : %s\n", path)
+	return nil
 }
 
 // themeCmd affiche les thèmes de couleurs ou choisit celui de l'interface.

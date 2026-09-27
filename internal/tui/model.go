@@ -124,6 +124,19 @@ func (m *ui) cycleTheme() {
 	m.flash = "thème " + m.theme
 }
 
+// exportDone signale la fin d'un export HTML lancé en arrière-plan.
+type exportDone struct {
+	path string
+	err  error
+}
+
+func (m *ui) exportCmd(run func() (string, error)) tea.Cmd {
+	return func() tea.Msg {
+		p, err := run()
+		return exportDone{p, err}
+	}
+}
+
 // ---- recherche ----
 
 type searchResult struct {
@@ -251,6 +264,13 @@ func (m *ui) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
 		m.layout()
+		return m, nil
+	case exportDone:
+		if msg.err != nil {
+			m.flash = "export impossible : " + msg.err.Error()
+		} else {
+			m.flash = "exporté : " + msg.path
+		}
 		return m, nil
 	case searchResult:
 		m.applySearch(msg)
@@ -382,6 +402,22 @@ func (m *ui) handleKey(k tea.KeyMsg) tea.Cmd {
 	case "?":
 		m.help, m.helpScr = true, 0
 		return nil
+	case "alt+e":
+		if a, ok := m.current(); ok {
+			m.flash = "export de la fiche…"
+			return m.exportCmd(func() (string, error) { return ExportAdvisory(m.st, a, "") })
+		}
+		return nil
+	case "alt+r":
+		q, sort := m.query, m.sort
+		m.flash = "export du rapport…"
+		return m.exportCmd(func() (string, error) {
+			path, n, total, err := ExportSearch(m.st, q, sort, exportMax, "")
+			if err == nil && total > n {
+				path += fmt.Sprintf("  (%s fiches sur %s)", fmtInt(n), fmtInt(total))
+			}
+			return path, err
+		})
 	case "alt+s":
 		m.srcView, m.helpScr, m.srcLines = true, 0, SourceReport(m.st)
 		return nil
