@@ -1,11 +1,8 @@
 # vulnkb
 
-```ansi
-[1;38;5;39m░█░█░█░█░█░░░█▀█░█░█░█▀▄[0m
-[1;38;5;75m░▀▄▀░█░█░█░░░█░█░█▀▄░█▀▄[0m
-[1;38;5;111m░░▀░░▀▀▀░▀▀▀░▀░▀░▀░▀░▀▀░[0m
-[38;5;244m   base de connaissances de sécurité · dans le terminal[0m
-```
+<p align="center">
+  <img src="docs/logo.svg" alt="vulnkb" width="680">
+</p>
 
 Base de connaissances de sécurité consultable en TUI. Collecte des advisories
 de vulnérabilités depuis des sources publiques, les normalise dans un format

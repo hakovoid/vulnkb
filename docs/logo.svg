@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="680" height="180" viewBox="0 0 680 180" role="img" aria-label="vulnkb — base de connaissances de sécurité">
+  <defs>
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#58a6ff"/>
+      <stop offset="1" stop-color="#79c0ff"/>
+    </linearGradient>
+  </defs>
+  <rect width="680" height="180" rx="14" fill="#0d1117"/>
+  <rect x="0.5" y="0.5" width="679" height="179" rx="13.5" fill="none" stroke="#232a33"/>
+  <g font-family="'JetBrains Mono','SFMono-Regular',ui-monospace,Menlo,Consolas,monospace">
+    <path d="M44 60 L60 74 L44 88" fill="none" stroke="#3fb950" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+    <text x="78" y="86" font-size="52" font-weight="700" fill="url(#accent)" letter-spacing="1">vulnkb</text>
+    <text x="80" y="122" font-size="17" fill="#7d8590">base de connaissances de sécurité · dans le terminal</text>
+    <g font-size="12" font-weight="700">
+      <rect x="80" y="140" width="52" height="22" rx="5" fill="#3d1d20"/>
+      <text x="106" y="155" fill="#f85149" text-anchor="middle">CRIT</text>
+      <rect x="140" y="140" width="52" height="22" rx="5" fill="#3d2616"/>
+      <text x="166" y="155" fill="#f0883e" text-anchor="middle">HIGH</text>
+      <rect x="200" y="140" width="46" height="22" rx="5" fill="#3a2e12"/>
+      <text x="223" y="155" fill="#d29922" text-anchor="middle">MED</text>
+      <rect x="254" y="140" width="48" height="22" rx="5" fill="#0d2b1b"/>
+      <text x="278" y="155" fill="#3fb950" text-anchor="middle">KEV</text>
+    </g>
+  </g>
+</svg>
