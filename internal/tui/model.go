@@ -49,6 +49,7 @@ type ui struct {
 	gotoMode bool
 	gotoBuf  string
 	theme    string // thème de couleurs courant
+	mouseOff bool   // souris laissée au terminal (clic sur les liens, sélection)
 	flash    string // message bref affiché dans la barre de statut
 
 	lastSync time.Time
@@ -68,7 +69,13 @@ func Run(st *store.Store) error {
 	applied := initTheme(name)
 	m := newUI(st)
 	m.theme = applied
-	_, err := tea.NewProgram(m, tea.WithAltScreen(), tea.WithMouseCellMotion()).Run()
+	opts := []tea.ProgramOption{tea.WithAltScreen()}
+	if os.Getenv("VULNKB_MOUSE") == "0" {
+		m.mouseOff = true
+	} else {
+		opts = append(opts, tea.WithMouseCellMotion())
+	}
+	_, err := tea.NewProgram(m, opts...).Run()
 	return err
 }
 
@@ -318,9 +325,20 @@ func abs(n int) int {
 	return n
 }
 
+// keyAliases fait accepter Alt partout où l'application utilise Ctrl :
+// certains terminaux, dont celui de VS Code, gardent des Ctrl pour eux
+// (Ctrl-G = « aller à la ligne »…).
+var keyAliases = map[string]string{
+	"alt+g": "ctrl+g", "alt+t": "ctrl+t", "alt+o": "ctrl+o", "alt+y": "ctrl+y",
+	"alt+left": "ctrl+left", "alt+right": "ctrl+right",
+}
+
 func (m *ui) handleKey(k tea.KeyMsg) tea.Cmd {
 	m.flash = ""
 	key := k.String()
+	if alias, ok := keyAliases[key]; ok {
+		key = alias
+	}
 	if key == "ctrl+c" {
 		return tea.Quit
 	}
@@ -369,6 +387,14 @@ func (m *ui) handleKey(k tea.KeyMsg) tea.Cmd {
 	case "ctrl+y":
 		m.cycleTheme()
 		return nil
+	case "alt+m":
+		m.mouseOff = !m.mouseOff
+		if m.mouseOff {
+			m.flash = "souris rendue au terminal : clic sur les liens et sélection de texte"
+			return tea.DisableMouse
+		}
+		m.flash = "souris active : molette et redimensionnement"
+		return tea.EnableMouseCellMotion
 	case "ctrl+t":
 		m.input.SetValue(toggleWord(m.input.Value(), "mes"))
 		m.input.CursorEnd()

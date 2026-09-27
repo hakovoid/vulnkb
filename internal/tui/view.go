@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 
@@ -164,8 +165,8 @@ func (m *ui) statusView(w int) string {
 	case m.zoom:
 		items = []kv{{"↑↓ pgup pgdn", "défiler"}, {"entrée esc", "revenir à la liste"}, {"? ", "aide"}}
 	default:
-		items = []kv{{"↑↓", "naviguer"}, {"tab", "liste/détail"}, {"^t", "mes"}, {"^o", "tri"}, {"^y", "thème"}, {"^←→", "largeur"},
-			{"entrée", "fiche"}, {"^g", "n°"}, {"?", "aide"}, {"esc", "quitter"}}
+		items = []kv{{"↑↓", "naviguer"}, {"tab", "détail"}, {"entrée", "fiche"}, {"alt+t", "mes"},
+			{"alt+o", "tri"}, {"alt+g", "n°"}, {"alt+s", "sources"}, {"alt+y", "thème"}, {"?", "aide"}, {"esc", "quitter"}}
 	}
 	var parts []string
 	if m.flash != "" {
@@ -326,7 +327,7 @@ func (m *ui) actionLines(a model.Advisory, w int) []string {
 		body = append(body, sty.muted.Render("Pas de correctif indiqué — voir les références ci-dessous."))
 	}
 	if link := fixLink(a.References); link != "" {
-		body = append(body, wrapLines(sty.muted.Render("↳ correctif/avis : ")+labelColor+link+reset, w)...)
+		body = append(body, sty.muted.Render("↳ correctif/avis :"), "  "+linkLine(link, w-2, labelColor))
 	}
 	if len(body) == 0 {
 		return nil
@@ -409,13 +410,13 @@ func (m *ui) detailLines(a model.Advisory, w int) []string {
 			tag := exploitKinds[e.Kind]
 			line := sty.faint.Render("• ") + magenta + tag + reset + " " + e.Title
 			lines = append(lines, wrapLines(line, w)...)
-			lines = append(lines, "  "+labelColor+"\x1b[4m"+truncEllipsis(e.URL, w-2)+reset)
+			lines = append(lines, "  "+linkLine(e.URL, w-2, labelColor))
 		}
 	}
 	if len(a.References) > 0 {
 		lines = append(lines, "", sty.id.Render("Références"))
 		for _, r := range a.References {
-			lines = append(lines, sty.faint.Render("• ")+labelColor+"\x1b[4m"+truncEllipsis(r, w-2)+reset)
+			lines = append(lines, sty.faint.Render("• ")+linkLine(r, w-2, labelColor))
 		}
 	}
 	return lines
@@ -428,6 +429,7 @@ func (m *ui) helpView(w, h int) string {
 	innerW := boxW - 4
 	var lines []string
 	for _, l := range helpLines() {
+		l = colorHelpKey(l)
 		if visibleLen(l) <= innerW {
 			lines = append(lines, l)
 		} else {
@@ -455,4 +457,21 @@ func shortAliases(ext string, n int) string {
 		return ext
 	}
 	return fmt.Sprintf("%s (%s, … et %d autres)", id, strings.Join(aliases[:n], ", "), len(aliases)-n)
+}
+
+// helpKeyRe repère une ligne d'aide « touche/terme, au moins deux espaces,
+// explication », pour colorer la première colonne.
+var helpKeyRe = regexp.MustCompile(`^  (\S[^\x1b]*?)(\s{2,})(\S.*)$`)
+
+// colorHelpKey met la touche (ou le filtre, le sigle) d'une ligne d'aide en
+// couleur d'accent, l'explication restant neutre.
+func colorHelpKey(l string) string {
+	if strings.Contains(l, "\x1b") {
+		return l // ligne déjà colorée (légende)
+	}
+	m := helpKeyRe.FindStringSubmatch(l)
+	if m == nil || visibleLen(m[1]) > 18 {
+		return l
+	}
+	return "  " + sty.key.Render(m[1]) + m[2] + m[3]
 }

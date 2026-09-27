@@ -299,3 +299,48 @@ func TestThemes(t *testing.T) {
 		t.Error("le message du thème devrait disparaître à la touche suivante")
 	}
 }
+
+func TestHelpKeysColored(t *testing.T) {
+	got := colorHelpKey("  Alt-G / Ctrl-G   aller au résultat")
+	if !strings.Contains(got, sty.key.Render("Alt-G / Ctrl-G")) || !strings.HasSuffix(got, "aller au résultat") {
+		t.Errorf("touche non colorée: %q", got)
+	}
+	for _, plain := range []string{"  Chaque mot est un début de mot ; plusieurs mots se cumulent.", "Touches", "  overflow"} {
+		if colorHelpKey(plain) != plain {
+			t.Errorf("ligne modifiée à tort: %q", plain)
+		}
+	}
+}
+
+func TestAltShortcuts(t *testing.T) {
+	m := navUI(t, 30)
+	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("o"), Alt: true})
+	if m.sort != store.SortDate {
+		t.Errorf("Alt-O : tri %v", m.sort)
+	}
+	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("g"), Alt: true})
+	if !m.gotoMode {
+		t.Error("Alt-G n'ouvre pas « aller au n° »")
+	}
+}
+
+func TestHyperlinks(t *testing.T) {
+	url := "https://www.vulncheck.com/advisories/redis-parser-through-3.0.0-denial-of-service"
+	l := linkLine(url, 30, labelColor)
+	if visibleLen(l) > 30 || !strings.Contains(l, osc8+url+"\x1b\\") {
+		t.Errorf("linkLine : largeur %d, %q", visibleLen(l), l)
+	}
+	lines := wrapLines("Voir "+url+". Merci", 40)
+	for _, x := range lines {
+		if visibleLen(x) > 40 {
+			t.Errorf("ligne trop large (%d) : %q", visibleLen(x), x)
+		}
+	}
+	joined := strings.Join(lines, "\n")
+	if strings.Count(joined, osc8+url) != 1 || !strings.Contains(joined, "Merci") {
+		t.Errorf("URL du texte mal rendue : %q", joined)
+	}
+	if got := linkify("(https://x.test/fix)", 80); !strings.HasPrefix(got, "("+osc8+"https://x.test/fix") || !strings.HasSuffix(got, ")") {
+		t.Errorf("linkify parenthèses : %q", got)
+	}
+}

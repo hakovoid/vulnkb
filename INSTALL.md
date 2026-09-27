@@ -123,16 +123,28 @@ Lance `./vulnkb` (ou `./vulnkb tui`).
 | `↑` / `↓`     | naviguer dans la liste (ou faire défiler le détail) |
 | `PgUp` / `PgDn` | page précédente / suivante (liste ou détail) |
 | `Début` / `Fin` | premier / dernier résultat                 |
-| `Ctrl-G`      | aller au résultat n° … (taper le numéro, puis `Entrée`) |
+| `Alt-G` / `Ctrl-G` | aller au résultat n° … (taper le numéro, puis `Entrée`) |
 | `Tab`         | basculer le focus entre la liste et le détail |
-| `Ctrl-T`      | activer / couper le filtre `mes` (produits surveillés) |
-| `Ctrl-O`      | changer le tri : pertinence → date de publication → criticité |
-| `Ctrl-Y`      | changer le thème de couleurs (mémorisé) |
-| `Ctrl-←` / `Ctrl-→` | rétrécir / élargir le panneau liste (ou glisser la séparation à la souris) |
+| `Alt-T` / `Ctrl-T` | activer / couper le filtre `mes` (produits surveillés) |
+| `Alt-O` / `Ctrl-O` | changer le tri : pertinence → date → criticité → EPSS |
+| `Alt-Y` / `Ctrl-Y` | changer le thème de couleurs (mémorisé) |
+| `Alt-S`       | liste des sources : contenu, nombre d'entrées, dernière collecte |
+| `Alt-M`       | rendre la souris au terminal (clic sur les liens, sélection de texte), et inversement |
+| `Alt-←` / `Alt-→` | rétrécir / élargir le panneau liste (aussi `Ctrl`, ou glisser la séparation à la souris) |
 | molette       | faire défiler la liste ou le détail selon le panneau survolé |
 | `Entrée`      | ouvrir la fiche en plein écran (`Entrée` ou `Esc` pour revenir) |
 | `?`           | aide : légende des couleurs et glossaire (CVE, GHSA, CWE, CVSS…) |
 | `Esc` / `Ctrl-C` | quitter (`Esc` ferme d'abord l'aide)       |
+
+Chaque raccourci `Ctrl` a son équivalent `Alt`, à utiliser quand le terminal
+garde le `Ctrl` pour lui (VS Code intercepte par exemple `Ctrl-G`).
+
+Les liens de la fiche (références, correctif, exploits, URL des résumés) sont
+cliquables, sur une seule ligne, même raccourcis par « … » : le terminal reçoit
+l'adresse complète (norme OSC 8, gérée par VS Code, GNOME Terminal, Kitty,
+WezTerm, iTerm2…). Selon le terminal, le clic demande `Ctrl` (VS Code) ; si
+l'application capte la souris et que le clic ne passe pas, `Alt-M` la rend au
+terminal, ou lance `VULNKB_MOUSE=0 vulnkb`.
 
 Chaque ligne de la liste montre, de gauche à droite : un `●` rouge si la
 faille est exploitée activement (son CVE figure au catalogue CISA KEV), la

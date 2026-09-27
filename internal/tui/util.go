@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -50,12 +51,13 @@ func wrapLines(s string, w int) []string {
 		cur := ""
 		curLen := 0
 		for _, word := range words {
+			word = linkify(word, w)
 			wl := visibleLen(word)
 			if curLen > 0 && curLen+1+wl > w {
 				lines = append(lines, cur)
 				cur, curLen = "", 0
 			}
-			for wl > w { // mot trop long (URL…) : coupé
+			for wl > w && !strings.Contains(word, osc8) { // mot trop long : coupé
 				lines = append(lines, trunc(word, w))
 				word = ansi.Cut(word, w, wl)
 				wl = visibleLen(word)
@@ -104,3 +106,32 @@ func humanBytes(n int64) string {
 func maxi(a, b int) int { return max(a, b) }
 
 func minInt(a, b int) int { return min(a, b) }
+
+// osc8 introduit un lien hypertexte de terminal (norme OSC 8) : le texte
+// affiché porte l'adresse complète, cliquable même s'il est raccourci.
+const osc8 = "\x1b]8;;"
+
+var urlRe = regexp.MustCompile(`https?://[^\s<>"'\x1b]+[^\s<>"'\x1b.,;:!?)\]]`)
+
+// hyperlink rend text cliquable vers url.
+func hyperlink(url, text string) string {
+	return osc8 + url + "\x1b\\" + text + osc8 + "\x1b\\"
+}
+
+// linkLine présente une URL sur une seule ligne d'au plus w colonnes,
+// soulignée et cliquable ; raccourcie par « … » si besoin.
+func linkLine(url string, w int, color string) string {
+	return color + "\x1b[4m" + hyperlink(url, truncEllipsis(url, max(8, w))) + reset
+}
+
+// linkify rend cliquable l'URL contenue dans un mot, raccourcie pour que le
+// mot tienne dans w colonnes.
+func linkify(word string, w int) string {
+	loc := urlRe.FindStringIndex(word)
+	if loc == nil || strings.Contains(word, osc8) {
+		return word
+	}
+	pre, url, post := word[:loc[0]], word[loc[0]:loc[1]], word[loc[1]:]
+	room := max(8, w-visibleLen(pre)-visibleLen(post))
+	return pre + hyperlink(url, truncEllipsis(url, room)) + post
+}
