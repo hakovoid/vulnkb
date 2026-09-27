@@ -23,7 +23,7 @@ CGO_ENABLED=1 go build -tags sqlite_fts5 -o vulnkb .   # compile
 ./vulnkb sync            # collecte les sources par défaut dans la base
 ./vulnkb sync osv-npm    # collecte une source précise
 ./vulnkb watch add nginx # suit un produit (filtre « mes » dans la recherche)
-./vulnkb add <url>       # ajoute un article (write-up, blog) via Ollama
+./vulnkb add <url|fichier|->  # ajoute un article ou un texte via Ollama
 ./vulnkb glossaire       # définitions FR de tous les acronymes
 ./vulnkb info            # aperçu : taille de la base, entrées par source
 ./vulnkb                 # lance la TUI de recherche (commande par défaut)
@@ -50,21 +50,37 @@ Les entrées OSV `MAL-*` (paquets malveillants) et les advisories retirés sont
 ignorés ; une même faille publiée sous plusieurs identifiants (GHSA / GO /
 PYSEC) n'est gardée qu'une fois, ses alias restant cherchables.
 
-## Articles (extraction IA)
+## Ajouter un article ou un texte
 
-`vulnkb add <url>` télécharge un article, en extrait le texte principal et le
-confie à un LLM local (Ollama) qui remplit une fiche : titre, résumé en
-français, composant, type de faille, sévérité, versions, remédiation,
-identifiants CVE/GHSA. La fiche est affichée puis enregistrée après
-confirmation (`-y` pour sauter la question), avec la source `article-ia`.
+`vulnkb add` transforme un document en fiche de la base, grâce à un LLM local
+(Ollama). Trois façons de lui donner le contenu :
 
-Garde-fous : les identifiants CVE/GHSA et les numéros de version proposés par
-le modèle sont écartés s'ils n'apparaissent pas dans l'article. Le reste
-(résumé, sévérité) reste à relire.
+```sh
+vulnkb add https://blog.example/write-up              # une page web (téléchargée)
+vulnkb add ~/notes/faille-vtiger.md                   # un fichier : texte, Markdown ou HTML enregistré
+xclip -o | vulnkb add -url https://origine.example -  # un texte envoyé par pipe
+vulnkb add -                                          # colle le texte, puis Ctrl-D
+```
 
-Réglages : `-model` ou `VULNKB_MODEL` (défaut `qwen2.5-coder:7b`), `-ollama` ou
-`OLLAMA_HOST` (défaut `http://localhost:11434`). Sans GPU, compter quelques
-minutes par article.
+**Oui, le texte est mis au format de la base automatiquement.** Le modèle lit
+le contenu et remplit une fiche : titre, résumé en français, composant, type de
+faille, sévérité, versions affectées et corrigées, remédiation, identifiants
+CVE/GHSA. La fiche est affichée, puis enregistrée seulement si tu confirmes
+(`-y` pour ne pas demander). Elle apparaît ensuite dans la TUI avec la source
+`IA`, pour rappeler qu'elle est à relire.
+
+- **Origine** : pour une page web, son URL sert de lien et d'identifiant. Pour
+  un texte, indique-la avec `-url` si tu la connais ; sinon l'identifiant est
+  calculé à partir du contenu (réimporter le même texte met à jour la fiche au
+  lieu de la dupliquer).
+- **Garde-fous** : un CVE, un GHSA ou un numéro de version proposé par le
+  modèle est retiré s'il n'apparaît pas dans le texte. Le résumé et la
+  sévérité, eux, ne sont pas vérifiés : relis-les.
+- **Qualité du texte** : plus il est précis (produit, versions, CVE,
+  correctif), meilleure est la fiche. Une note de quelques lignes suffit.
+- **Réglages** : `-model` ou `VULNKB_MODEL` (défaut `qwen2.5-coder:7b`),
+  `-ollama` ou `OLLAMA_HOST` (défaut `http://localhost:11434`). Sans GPU,
+  compter de 1 à 4 minutes selon la longueur.
 
 Tests : `CGO_ENABLED=1 go test -tags sqlite_fts5 ./...`
 
@@ -74,8 +90,9 @@ passer de la liste au détail, `esc` (ou Ctrl-C) pour quitter.
 La base est stockée dans `~/.config/vulnkb/vulnkb.db` (ou le dossier courant).
 
 > Note réseau : la collecte contacte `cisa.gov`,
-> `osv-vulnerabilities.storage.googleapis.com`, `www.cert.ssi.gouv.fr` et `nvd.nist.gov`, et `go mod tidy` récupère les
-> modules. Si ton environnement filtre les sorties réseau (proxy/allowlist),
+> `osv-vulnerabilities.storage.googleapis.com`, `www.cert.ssi.gouv.fr`,
+> `nvd.nist.gov`, `gitlab.com`, `raw.githubusercontent.com` et
+> `codeload.github.com` (exploits), et `go mod tidy` récupère les modules. Si ton environnement filtre les sorties réseau (proxy/allowlist),
 > autorise ces domaines et le proxy Go, ou utilise `GOPROXY=direct` pour tirer
 > les dépendances GitHub.
 
@@ -87,13 +104,140 @@ internal/store/    SQLite + index FTS5, upsert et recherche
 internal/source/   interface Source + registre ; une source = un fichier
 internal/extract/  article web → texte → fiche via Ollama (commande add)
 internal/tui/      interface Bubble Tea + Lipgloss (recherche / liste / fiche / aide)
-main.go            CLI : sync, sources, add, tui
+main.go            CLI : sync, sources, add, watch, info, glossaire, tui
 ```
 
-## Ajouter une source
+## Ajouter une source perso
 
-Une source implémente l'interface `source.Source` (méthodes `Name()` et
-`Fetch()`) et s'enregistre dans un `init()`. Voir `internal/source/cisakev.go`
-comme modèle. Une source lourde peut implémenter `Optional()` pour être exclue
-du sync par défaut (voir `osv.go`). Pistes : NVD (CVSS/CWE), flux RSS
-d'éditeurs.
+Une source est un fichier Go dans `internal/source/` qui télécharge des
+données et les convertit en fiches (`model.Advisory`). Elle s'enregistre
+toute seule : une fois le binaire recompilé, elle apparaît dans
+`vulnkb sources` et est collectée par `vulnkb sync`.
+
+### 1. Écrire le fichier
+
+Exemple complet : le flux RSS des bulletins de sécurité d'un éditeur, à
+copier dans `internal/source/mon_flux.go` et à adapter (URL, nom, champs) :
+
+```go
+package source
+
+import (
+	"context"
+	"encoding/xml"
+	"fmt"
+	"net/http"
+	"regexp"
+	"strings"
+	"time"
+
+	"vulnkb/internal/model"
+)
+
+// Flux RSS des bulletins de sécurité d'un éditeur (exemple).
+const monFluxURL = "https://editeur.example/security/rss.xml"
+
+func init() { Register(&monFlux{client: &http.Client{Timeout: 30 * time.Second}}) }
+
+type monFlux struct{ client *http.Client }
+
+func (s *monFlux) Name() string { return "mon-flux" }
+
+func (s *monFlux) Fetch(ctx context.Context, since time.Time) ([]model.Advisory, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, monFluxURL, nil)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := s.client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("statut %d", resp.StatusCode)
+	}
+
+	var feed struct {
+		Items []struct {
+			Title       string `xml:"title"`
+			Link        string `xml:"link"`
+			Description string `xml:"description"`
+			PubDate     string `xml:"pubDate"`
+			GUID        string `xml:"guid"`
+		} `xml:"channel>item"`
+	}
+	if err := xml.NewDecoder(resp.Body).Decode(&feed); err != nil {
+		return nil, err
+	}
+
+	cveRe := regexp.MustCompile(`CVE-\d{4}-\d{4,}`)
+	var out []model.Advisory
+	for _, it := range feed.Items {
+		pub, _ := time.Parse(time.RFC1123Z, it.PubDate)
+		id := it.GUID
+		if id == "" {
+			id = it.Link
+		}
+		ext := id
+		if cves := cveRe.FindAllString(it.Title+" "+it.Description, -1); len(cves) > 0 {
+			ext = id + " (" + strings.Join(cves, ", ") + ")"
+		}
+		out = append(out, model.Advisory{
+			ID:         s.Name() + ":" + id,
+			Source:     s.Name(),
+			ExternalID: ext,
+			Title:      it.Title,
+			Summary:    it.Description,
+			References: []string{it.Link},
+			Published:  pub,
+			URL:        it.Link,
+		})
+	}
+	return out, nil
+}
+```
+
+### 2. Remplir la fiche
+
+| Champ | Rôle | Conseil |
+|-------|------|---------|
+| `ID` | identifiant interne unique et stable | `"<source>:<id d'origine>"` : une nouvelle synchro met la fiche à jour au lieu de la dupliquer |
+| `Source` | nom de la source | le même que `Name()` |
+| `ExternalID` | identifiant affiché, et ses alias | mets les CVE entre parenthèses : `"BULL-42 (CVE-2026-1234, CVE-2026-5678)"`. C'est ce qui relie la fiche au reste de la base : marqueur « exploitée » (KEV), score NVD, exploits publics, avis CERT-FR, filtre `exploitee` |
+| `Title`, `Summary` | titre et description | le résumé peut contenir du Markdown et des blocs de code, ils seront mis en forme |
+| `Component` | produit ou paquet touché | c'est ce que cherche le filtre `mes` (liste de surveillance) |
+| `Severity` | sévérité | `CRITICAL`, `HIGH`, `MODERATE`/`MEDIUM`, `LOW`, ou un vecteur CVSS 3.x (le score est calculé). Vide : la sévérité NVD des CVE prend le relais |
+| `VulnType` | type de faille | codes CWE (`CWE-79`) : leur nom s'affiche en français |
+| `AffectedVersions`, `FixedVersions` | versions touchées / corrigées | alimentent le bloc « Que faire » |
+| `Remediation` | action recommandée | idem |
+| `References`, `URL` | liens | le lien de correctif le plus utile est repris dans « Que faire » |
+| `Published` | date de publication | sert au tri par date |
+
+### 3. Options
+
+- `Optional() bool` renvoyant `true` : la source n'est collectée que si on la
+  nomme (`vulnkb sync mon-flux`), utile pour une source lourde (voir `osv.go`).
+- `Incremental() bool` : le sync lui passe la date de sa dernière collecte
+  (`since`) pour ne récupérer que les nouveautés.
+- `FetchKnown(ctx, known)` : variante qui reçoit la date de collecte de chaque
+  fiche déjà en base, pour ne télécharger que le nouveau ou le révisé
+  (voir `certfr.go`).
+- Badge et filtre : ajoute ta source à la table `sources` de
+  `internal/tui/present.go` (badge de 3 lettres, couleur, nom) et à `srcNames`
+  dans `internal/store/query.go` (pour `src:mon-flux`). Sans cela, le badge
+  prend les 3 premières lettres du nom, en gris.
+
+### 4. Tester et collecter
+
+```sh
+CGO_ENABLED=1 go build -tags sqlite_fts5 -o vulnkb .
+./vulnkb sources            # la source apparaît
+./vulnkb sync mon-flux      # collecte seulement celle-ci
+./vulnkb info               # nombre d'entrées par source
+```
+
+Pour un test automatique sans réseau, sers un faux flux avec `httptest`
+(voir `certfr_test.go`).
+
+Un document isolé (un write-up, une note) n'a pas besoin de source : utilise
+`vulnkb add`.

@@ -216,7 +216,7 @@ Commandes en ligne (hors TUI) :
 ./vulnkb tui             # interface de recherche (= ./vulnkb sans argument)
 ```
 
-### Ajouter un article (extraction IA)
+### Ajouter un article ou un texte (extraction IA)
 
 Pour un write-up ou un billet de blog qui n'existe dans aucune source
 structurée, `add` fait extraire une fiche par le LLM local.
@@ -232,9 +232,15 @@ Utilisation :
 
 ```sh
 ./vulnkb add https://www.hacktron.ai/blog/hacking-openai
+./vulnkb add ~/notes/faille.md                 # un fichier texte, Markdown ou HTML
+./vulnkb add -url https://origine.example -    # un texte collé (Ctrl-D pour finir) ou pipé
 ./vulnkb add -y <url>                          # sans confirmation
 ./vulnkb add -model qwen2.5-coder:14b <url>    # autre modèle
 ```
+
+Un texte (fichier ou entrée standard) est mis au format de la base comme une
+page web : le modèle remplit la fiche à partir du contenu. `-url` indique
+l'origine du texte ; sans elle, l'identifiant est calculé à partir du contenu.
 
 La fiche est affichée avant d'être enregistrée. Elle apparaît ensuite dans la
 TUI avec la source `article-ia`, pour rappeler qu'elle vient d'un modèle et

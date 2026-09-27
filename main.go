@@ -11,8 +11,10 @@ package main
 import (
 	"bufio"
 	"context"
+	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -229,27 +231,60 @@ func add(st *store.Store, args []string) error {
 	modelName := fs.String("model", envOr("VULNKB_MODEL", "qwen2.5-coder:7b"), "modèle Ollama")
 	host := fs.String("ollama", os.Getenv("OLLAMA_HOST"), "adresse d'Ollama (défaut http://localhost:11434)")
 	yes := fs.Bool("y", false, "enregistrer sans demander confirmation")
+	ref := fs.String("url", "", "pour un texte : URL d'origine (lien et identifiant de la fiche)")
 	fs.Usage = func() {
-		fmt.Fprintln(fs.Output(), "usage : vulnkb add [-y] [-model nom] [-ollama url] <url>")
+		fmt.Fprintln(fs.Output(), "usage : vulnkb add [-y] [-model nom] [-ollama url] [-url origine] <url | fichier | ->")
+		fmt.Fprintln(fs.Output(), "  <url>      page web à télécharger")
+		fmt.Fprintln(fs.Output(), "  fichier    texte, Markdown ou HTML déjà enregistré")
+		fmt.Fprintln(fs.Output(), "  -          texte lu sur l'entrée standard (copier-coller, pipe)")
 		fs.PrintDefaults()
 	}
 	if err := fs.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return nil
+		}
 		return err
 	}
 	if fs.NArg() != 1 {
 		fs.Usage()
-		return fmt.Errorf("une URL attendue")
+		return fmt.Errorf("une URL, un fichier ou « - » attendu")
 	}
-	pageURL := fs.Arg(0)
+	target := fs.Arg(0)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Minute)
 	defer cancel()
 
-	fmt.Printf("→ téléchargement de %s… ", pageURL)
-	page, err := extract.Fetch(ctx, &http.Client{Timeout: 30 * time.Second}, pageURL)
-	if err != nil {
+	var page extract.Page
+	switch {
+	case strings.HasPrefix(target, "http://") || strings.HasPrefix(target, "https://"):
+		fmt.Printf("→ téléchargement de %s… ", target)
+		p, err := extract.Fetch(ctx, &http.Client{Timeout: 30 * time.Second}, target)
+		if err != nil {
+			fmt.Println()
+			return err
+		}
+		page = p
+	case target == "-":
+		if isTerminal(os.Stdin) {
+			fmt.Println("Colle le texte, puis Ctrl-D sur une ligne vide :")
+		}
+		b, err := io.ReadAll(os.Stdin)
+		if err != nil {
+			return err
+		}
+		page = extract.FromText(string(b), *ref)
+		fmt.Print("→ texte lu sur l'entrée standard… ")
+	default:
+		b, err := os.ReadFile(target)
+		if err != nil {
+			return fmt.Errorf("lecture de %s : %w", target, err)
+		}
+		page = extract.FromText(string(b), *ref)
+		fmt.Printf("→ fichier %s… ", target)
+	}
+	if strings.TrimSpace(page.Text) == "" {
 		fmt.Println()
-		return err
+		return fmt.Errorf("aucun texte à analyser")
 	}
 	fmt.Printf("%d caractères\n", len([]rune(page.Text)))
 
@@ -496,4 +531,10 @@ func dbPath() string {
 		}
 	}
 	return "vulnkb.db"
+}
+
+// isTerminal indique si f est un terminal interactif (et non un pipe).
+func isTerminal(f *os.File) bool {
+	st, err := f.Stat()
+	return err == nil && st.Mode()&os.ModeCharDevice != 0
 }

@@ -5,6 +5,8 @@ package extract
 
 import (
 	"context"
+	"crypto/sha1"
+	"encoding/hex"
 	"fmt"
 	"html"
 	"io"
@@ -172,4 +174,35 @@ func parseDate(s string) time.Time {
 		}
 	}
 	return time.Time{}
+}
+
+// FromText construit une page à partir d'un contenu déjà en main : texte
+// brut, Markdown ou HTML enregistré. ref est l'URL d'origine si on la
+// connaît ; sinon un identifiant stable est dérivé du contenu, pour que
+// réimporter le même texte mette à jour la fiche au lieu de la dupliquer.
+func FromText(content, ref string) Page {
+	content = strings.TrimSpace(strings.ReplaceAll(content, "\r\n", "\n"))
+	if ref == "" {
+		sum := sha1.Sum([]byte(content))
+		ref = "texte:" + hex.EncodeToString(sum[:])[:12]
+	}
+	low := strings.ToLower(content)
+	if strings.Contains(low, "<html") || strings.Contains(low, "<body") || strings.Contains(low, "<article") {
+		return ParsePage(ref, content)
+	}
+	p := Page{URL: ref, Text: content}
+	for _, l := range strings.Split(content, "\n") {
+		if l = strings.TrimSpace(strings.TrimLeft(strings.TrimSpace(l), "#")); l != "" {
+			p.Title = firstRunes(l, 140)
+			break
+		}
+	}
+	return p
+}
+
+func firstRunes(s string, n int) string {
+	if r := []rune(s); len(r) > n {
+		return string(r[:n]) + "…"
+	}
+	return s
 }

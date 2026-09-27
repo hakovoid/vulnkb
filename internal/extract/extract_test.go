@@ -164,3 +164,35 @@ func TestNormalizeHost(t *testing.T) {
 		}
 	}
 }
+
+func TestFromText(t *testing.T) {
+	md := "# Faille critique dans vtiger CRM\n\nUne injection SQL (CVE-2024-42994) touche vtiger 8.1.0."
+	p := FromText(md, "")
+	if p.Title != "Faille critique dans vtiger CRM" {
+		t.Errorf("titre: %q", p.Title)
+	}
+	if !strings.HasPrefix(p.URL, "texte:") || FromText(md, "").URL != p.URL {
+		t.Errorf("identifiant non stable: %q", p.URL)
+	}
+	if FromText(md+" (modifié)", "").URL == p.URL {
+		t.Error("deux textes différents ont le même identifiant")
+	}
+	if got := FromText(md, "https://blog.example/post").URL; got != "https://blog.example/post" {
+		t.Errorf("URL fournie ignorée: %q", got)
+	}
+	h := FromText(sampleHTML, "")
+	if h.Title != "Hacking OpenAI via libheif" || strings.Contains(h.Text, "tracking") {
+		t.Errorf("HTML non nettoyé: titre %q", h.Title)
+	}
+
+	a, err := Extract(context.Background(), &fakeLLM{reply: `{"title":"","ids":["CVE-2024-42994"]}`}, p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if a.ExternalID != "CVE-2024-42994" || len(a.References) != 0 {
+		t.Errorf("fiche depuis un texte: id %q, références %q", a.ExternalID, a.References)
+	}
+	if !strings.HasPrefix(a.ID, "article:texte:") {
+		t.Errorf("ID interne: %q", a.ID)
+	}
+}

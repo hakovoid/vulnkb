@@ -129,7 +129,7 @@ func toAdvisory(p Page, f Fields) model.Advisory {
 		AffectedVersions: anchoredVersions(f.AffectedVersions, p.Text),
 		FixedVersions:    anchoredVersions(f.FixedVersions, p.Text),
 		Remediation:      strings.TrimSpace(f.Remediation),
-		References:       append([]string{p.URL}, p.Links...),
+		References:       webRefs(p),
 		Published:        p.Published,
 		Fetched:          time.Now(),
 		URL:              p.URL,
@@ -195,4 +195,13 @@ func canonicalURL(raw string) string {
 	u.Host = strings.ToLower(u.Host)
 	u.Path = strings.TrimRight(u.Path, "/")
 	return u.String()
+}
+
+// webRefs renvoie l'URL de l'article (si c'en est une) suivie de ses liens.
+func webRefs(p Page) []string {
+	var refs []string
+	if strings.HasPrefix(p.URL, "http://") || strings.HasPrefix(p.URL, "https://") {
+		refs = append(refs, p.URL)
+	}
+	return append(refs, p.Links...)
 }
