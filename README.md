@@ -22,7 +22,8 @@ CGO_ENABLED=1 go build -tags sqlite_fts5 -o vulnkb .   # compile
 ./vulnkb sources         # liste les sources disponibles
 ./vulnkb sync            # collecte les sources par défaut dans la base
 ./vulnkb sync osv-npm    # collecte une source précise
-./vulnkb watch add nginx # suit un produit (filtre « mes » dans la recherche)
+./vulnkb watch add nginx # suit un produit (filtre « mes », Ctrl-T dans la TUI)
+./vulnkb watch import ~/projets  # suit toutes les dépendances de tes projets
 ./vulnkb add <url|fichier|->  # ajoute un article ou un texte via Ollama
 ./vulnkb glossaire       # définitions FR de tous les acronymes
 ./vulnkb info            # aperçu : taille de la base, entrées par source

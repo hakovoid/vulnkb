@@ -164,7 +164,7 @@ func (m *ui) statusView(w int) string {
 	case m.zoom:
 		items = []kv{{"↑↓ pgup pgdn", "défiler"}, {"entrée esc", "revenir à la liste"}, {"? ", "aide"}}
 	default:
-		items = []kv{{"↑↓", "naviguer"}, {"tab", "liste/détail"}, {"^o", "tri"}, {"^←→", "largeur"},
+		items = []kv{{"↑↓", "naviguer"}, {"tab", "liste/détail"}, {"^t", "mes"}, {"^o", "tri"}, {"^←→", "largeur"},
 			{"entrée", "fiche"}, {"^g", "n°"}, {"?", "aide"}, {"esc", "quitter"}}
 	}
 	var parts []string

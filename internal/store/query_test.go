@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"os"
 	"reflect"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -367,5 +368,53 @@ func TestSortModes(t *testing.T) {
 	}
 	if SortLabel(SortSeverity) != "criticité" || SortLabel(SortAuto) != "pertinence" {
 		t.Errorf("SortLabel incorrect")
+	}
+}
+
+func TestWatchQualifiedTerms(t *testing.T) {
+	st, err := Open(t.TempDir() + "/q.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	_, err = st.Upsert([]model.Advisory{
+		{ID: "osv:1", Source: "osv", ExternalID: "GHSA-1", Title: "Open redirect", Component: "npm express"},
+		{ID: "osv:2", Source: "osv", ExternalID: "GHSA-2", Title: "Prototype pollution", Component: "npm @geolens/sdk, geolens-cli, geolens"},
+		{ID: "osv:3", Source: "osv", ExternalID: "GHSA-3", Title: "Express gateway bug", Component: "PyPI express-gateway"},
+		{ID: "osv:4", Source: "osv", ExternalID: "GHSA-4", Title: "MSRC bulletin", Component: "Go github.com/x/msrc"},
+		{ID: "osv:5", Source: "osv", ExternalID: "GHSA-5", Title: "Cobra flaw", Component: "Go github.com/spf13/cobra"},
+		{ID: "osv:6", Source: "osv", ExternalID: "GHSA-6", Title: "Codegen XSS", Component: "npm @aws-amplify/codegen-ui-react"},
+		{ID: "osv:7", Source: "osv", ExternalID: "GHSA-7", Title: "React DOM XSS", Component: "npm react, react-dom"},
+		{ID: "osv:8", Source: "osv", ExternalID: "GHSA-8", Title: "pydantic_core", Component: "PyPI pydantic_core"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer SetWatchlist(nil)
+	cases := map[string][]string{
+		"npm:express":               {"osv:1"}, // pas le paquet PyPI, pas le titre
+		"npm:geolens-cli":           {"osv:2"}, // 2e paquet du composant
+		"npm:ms":                    nil,       // nom court : aucun faux positif
+		"go:github.com/spf13/cobra": {"osv:5"},
+		"express":                   {"osv:1", "osv:3"}, // terme simple : titre et composant
+		"npm:react":                 {"osv:7"},          // pas « codegen-ui-react »
+		"npm:react-dom":             {"osv:7"},          // 2e paquet de la liste
+		"pypi:pydantic_core":        {"osv:8"},          // « _ » n'est pas un joker
+		"pypi:pydantic-core":        nil,
+	}
+	for term, want := range cases {
+		SetWatchlist([]string{term})
+		res, err := st.Search("mes", 20)
+		if err != nil {
+			t.Fatalf("%s: %v", term, err)
+		}
+		var got []string
+		for _, a := range res {
+			got = append(got, a.ID)
+		}
+		sort.Strings(got)
+		if !reflect.DeepEqual(got, want) && !(len(got) == 0 && len(want) == 0) {
+			t.Errorf("%s: obtenu %v, attendu %v", term, got, want)
+		}
 	}
 }

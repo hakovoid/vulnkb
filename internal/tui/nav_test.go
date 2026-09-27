@@ -44,7 +44,7 @@ func navUI(t *testing.T, n int) *ui {
 
 var specialKeys = map[string]tea.KeyType{
 	"up": tea.KeyUp, "down": tea.KeyDown, "pgup": tea.KeyPgUp, "pgdown": tea.KeyPgDown,
-	"home": tea.KeyHome, "end": tea.KeyEnd, "enter": tea.KeyEnter, "esc": tea.KeyEsc,
+	"home": tea.KeyHome, "end": tea.KeyEnd, "enter": tea.KeyEnter, "esc": tea.KeyEsc, "ctrl+t": tea.KeyCtrlT,
 	"tab": tea.KeyTab, "ctrl+g": tea.KeyCtrlG, "backspace": tea.KeyBackspace,
 }
 
@@ -249,5 +249,28 @@ func TestHumanBytes(t *testing.T) {
 		if got := humanBytes(n); got != want {
 			t.Errorf("humanBytes(%d) = %q, attendu %q", n, got, want)
 		}
+	}
+}
+
+func TestToggleWatchFilter(t *testing.T) {
+	if got := toggleWord("nginx sev:crit", "mes"); got != "mes nginx sev:crit" {
+		t.Errorf("ajout: %q", got)
+	}
+	if got := toggleWord("mes nginx", "mes"); got != "nginx" {
+		t.Errorf("retrait: %q", got)
+	}
+	if got := toggleWord("", "mes"); got != "mes" {
+		t.Errorf("saisie vide: %q", got)
+	}
+	store.SetWatchlist([]string{"spéciale"})
+	defer store.SetWatchlist(nil)
+	m := navUI(t, 50)
+	press(m, "ctrl+t")
+	if m.input.Value() != "mes" || m.matches != 5 {
+		t.Errorf("Ctrl-T : saisie %q, %d résultats", m.input.Value(), m.matches)
+	}
+	press(m, "ctrl+t")
+	if m.input.Value() != "" || m.matches != 50 {
+		t.Errorf("Ctrl-T (retour) : saisie %q, %d résultats", m.input.Value(), m.matches)
 	}
 }

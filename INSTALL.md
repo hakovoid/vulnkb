@@ -125,6 +125,7 @@ Lance `./vulnkb` (ou `./vulnkb tui`).
 | `Début` / `Fin` | premier / dernier résultat                 |
 | `Ctrl-G`      | aller au résultat n° … (taper le numéro, puis `Entrée`) |
 | `Tab`         | basculer le focus entre la liste et le détail |
+| `Ctrl-T`      | activer / couper le filtre `mes` (produits surveillés) |
 | `Ctrl-O`      | changer le tri : pertinence → date de publication → criticité |
 | `Ctrl-←` / `Ctrl-→` | rétrécir / élargir le panneau liste (ou glisser la séparation à la souris) |
 | molette       | faire défiler la liste ou le détail selon le panneau survolé |
@@ -187,12 +188,34 @@ les retrouver d'un filtre :
 vulnkb watch                         # affiche la liste et son fichier
 vulnkb watch add nginx vtiger koai   # ajoute des produits (ou mots-clés)
 vulnkb watch rm koai                 # en retire
+vulnkb watch import ~/kuro_apps      # ajoute les dépendances de tous tes projets
+vulnkb watch import -n ~/kuro_apps   # simulation : affiche sans rien modifier
 ```
 
+`watch import` explore les dossiers donnés et lit les fichiers de dépendances :
+`package.json` (npm), `go.mod`, `requirements.txt` et `pyproject.toml`
+(Python), `composer.json` (PHP), `Cargo.toml` (Rust) et les images des
+`docker-compose`. Il ignore `node_modules`, les sorties de compilation, les
+dossiers cachés et les copies de sauvegarde (`…backup…`, `…-bck`). Les
+dépendances de développement et les dépendances Go indirectes ne sont prises
+qu'avec `-dev` et `-indirect`. Les nouveaux termes sont ajoutés au fichier,
+regroupés par projet sous un commentaire ; relancer l'import n'ajoute que ce
+qui a changé.
+
 La liste est un simple fichier `~/.config/vulnkb/watch.txt` (un terme par
-ligne, éditable à la main). Dans la recherche, `mes` ne montre que les entrées
-dont l'identifiant, le titre ou le composant contient un de ces termes ;
-`mes sev:high+` ou `mes exploitee` combinent avec les autres filtres.
+ligne, `#` pour commenter, éditable à la main). Deux sortes de termes :
+
+- **terme simple** (`nginx`, `vtiger`, une image Docker) : cherché en début de
+  mot dans l'identifiant, le titre et le composant ;
+- **terme qualifié** (`npm:express`, `pypi:fastapi`, `go:github.com/spf13/cobra`,
+  `packagist:…`, `crates:…`) : seul ce paquet exact de cet écosystème compte,
+  pour éviter le bruit des noms courts (`npm:ms` ne ramène pas « MSRC »,
+  `npm:react` ne ramène pas `@aws-amplify/codegen-ui-react`).
+
+Dans la recherche, `mes` (ou **Ctrl-T**, qui l'ajoute et le retire) ne montre
+que les entrées liées à ta liste ; `mes sev:high+` ou `mes exploitee`
+combinent avec les autres filtres. Si tes projets utilisent npm, collecte
+aussi `vulnkb sync osv-npm`, qui n'est pas dans le sync par défaut.
 Les filtres reconnus s'affichent à droite de la saisie ; un filtre mal écrit
 est signalé en rouge.
 

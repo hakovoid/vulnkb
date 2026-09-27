@@ -84,72 +84,6 @@ func run() error {
 	}
 }
 
-// watchCmd gère la liste de surveillance : « watch » l'affiche, « watch add
-// <termes…> » et « watch rm <termes…> » la modifient. Le filtre « mes » de la
-// recherche s'y réfère.
-func watchCmd(args []string) error {
-	path := watchlistPath()
-	terms := store.Watchlist()
-	if len(args) == 0 {
-		fmt.Printf("liste de surveillance (%s) :\n", path)
-		if len(terms) == 0 {
-			fmt.Println("  (vide) — ajoute un produit : vulnkb watch add nginx vtiger")
-			return nil
-		}
-		for _, t := range terms {
-			fmt.Println("  •", t)
-		}
-		fmt.Println("\nDans la recherche, le filtre « mes » ne montre que ces produits.")
-		return nil
-	}
-	op, rest := args[0], args[1:]
-	if (op != "add" && op != "rm") || len(rest) == 0 {
-		return fmt.Errorf("usage : vulnkb watch [add|rm <termes…>]")
-	}
-	set := map[string]bool{}
-	var out []string
-	for _, t := range terms {
-		set[strings.ToLower(t)] = true
-		out = append(out, t)
-	}
-	for _, t := range rest {
-		t = strings.TrimSpace(t)
-		l := strings.ToLower(t)
-		switch op {
-		case "add":
-			if t != "" && !set[l] {
-				set[l] = true
-				out = append(out, t)
-			}
-		case "rm":
-			delete(set, l)
-			kept := out[:0]
-			for _, x := range out {
-				if strings.ToLower(x) != l {
-					kept = append(kept, x)
-				}
-			}
-			out = kept
-		}
-	}
-	if err := writeWatchlist(path, out); err != nil {
-		return err
-	}
-	fmt.Printf("%d produit(s) surveillé(s) : %s\n", len(out), strings.Join(out, ", "))
-	return nil
-}
-
-func writeWatchlist(path string, terms []string) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return err
-	}
-	body := "# Produits surveillés par vulnkb (un par ligne). Filtre « mes » dans la recherche.\n"
-	for _, t := range terms {
-		body += t + "\n"
-	}
-	return os.WriteFile(path, []byte(body), 0o644)
-}
-
 // info affiche un aperçu de la base : taille, entrées par source, exploits,
 // dernière collecte.
 func info(st *store.Store) error {
@@ -215,13 +149,6 @@ func printGlossary() {
 			fmt.Printf("  \033[36m%-16s\033[0m %s\n", t.Name, t.Def)
 		}
 	}
-}
-
-func watchlistPath() string {
-	if dir, err := os.UserConfigDir(); err == nil {
-		return filepath.Join(dir, "vulnkb", "watch.txt")
-	}
-	return "vulnkb-watch.txt"
 }
 
 // add télécharge un article, en fait extraire une fiche par le LLM local,

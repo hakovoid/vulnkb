@@ -120,36 +120,68 @@ func (q Query) Impossible() bool {
 	return q.WatchReq && len(q.Watch) == 0
 }
 
-// matchExpr assemble la requête plein-texte : texte libre et, pour « mes »,
-// les termes surveillés (recherchés dans l'identifiant, le titre et le
-// composant). Vide si la recherche ne porte que sur des filtres SQL.
+// matchExpr est la requête plein-texte du texte libre (vide s'il n'y en a
+// pas). Le filtre « mes » est traité à part, dans where().
 func (q Query) matchExpr() string {
-	text := ftsQuery(q.Text)
-	watch := watchExpr(q.Watch)
-	switch {
-	case watch != "" && text != "":
-		return watch + " AND (" + text + ")"
-	case watch != "":
-		return watch
-	default:
-		return text
-	}
+	return ftsQuery(q.Text)
 }
 
-// watchExpr construit l'expression FTS des termes surveillés, restreinte aux
-// colonnes identifiant / titre / composant.
-func watchExpr(terms []string) string {
-	var parts []string
+// watchEcosystems associe le préfixe d'un terme qualifié (« npm:express ») au
+// mot qui désigne l'écosystème dans l'index, et à son nom dans le composant
+// des fiches OSV (« PyPI fastapi », « crates.io serde »…).
+var watchEcosystems = map[string]struct{ token, label string }{
+	"npm": {"npm", "npm"}, "pypi": {"pypi", "pypi"}, "go": {"go", "go"},
+	"packagist": {"packagist", "packagist"}, "crates": {"crates", "crates.io"},
+	"maven": {"maven", "maven"}, "nuget": {"nuget", "nuget"}, "rubygems": {"rubygems", "rubygems"},
+}
+
+// watchClause construit la condition SQL du filtre « mes » (sur l'alias a),
+// en deux temps pour rester rapide :
+//  1. une seule recherche dans l'index plein-texte ramène les candidats de
+//     tous les termes (a.rowid IN …) ;
+//  2. chaque candidat est gardé s'il correspond à un terme simple (« nginx »,
+//     en début de mot dans l'identifiant, le titre ou le composant), ou si
+//     un paquet qualifié (« npm:react ») figure exactement dans la liste du
+//     composant (« npm react, react-dom ») — ce qui écarte
+//     « @aws-amplify/codegen-ui-react » et les faux positifs des noms courts.
+func watchClause(terms []string) (string, []any) {
+	const inFTS = "a.rowid IN (SELECT rowid FROM advisories_fts WHERE advisories_fts MATCH ?)"
+	var candidates, plain, conds []string
+	var args []any
 	for _, t := range terms {
 		t = strings.TrimSpace(strings.ReplaceAll(t, `"`, ""))
-		if t != "" {
-			parts = append(parts, `"`+t+`"*`)
+		if t == "" {
+			continue
 		}
+		if eco, pkg, ok := strings.Cut(t, ":"); ok && pkg != "" {
+			if e, known := watchEcosystems[strings.ToLower(eco)]; known {
+				p := likeEscape(strings.ToLower(pkg))
+				candidates = append(candidates, `component:(`+e.token+` "`+pkg+`")`)
+				conds = append(conds, `lower(a.component) = ? OR lower(a.component) LIKE ? ESCAPE '\'
+     OR lower(a.component) LIKE ? ESCAPE '\' OR lower(a.component) LIKE ? ESCAPE '\'`)
+				args = append(args, e.label+" "+strings.ToLower(pkg),
+					likeEscape(e.label)+" "+p+",%", "%, "+p, "%, "+p+",%")
+				continue
+			}
+		}
+		plain = append(plain, `"`+t+`"*`)
 	}
-	if len(parts) == 0 {
-		return ""
+	if len(plain) > 0 {
+		expr := "{external_id title component}:(" + strings.Join(plain, " OR ") + ")"
+		candidates = append(candidates, expr)
+		conds = append([]string{inFTS}, conds...)
+		args = append([]any{expr}, args...)
 	}
-	return "{external_id title component}:(" + strings.Join(parts, " OR ") + ")"
+	if len(candidates) == 0 {
+		return "", nil
+	}
+	clause := " AND " + inFTS + " AND (" + strings.Join(conds, "\n  OR ") + ")"
+	return clause, append([]any{"(" + strings.Join(candidates, " OR ") + ")"}, args...)
+}
+
+// likeEscape neutralise les jokers de LIKE (%, _) d'un nom de paquet.
+func likeEscape(s string) string {
+	return strings.NewReplacer(`\`, `\\`, "%", `\%`, "_", `\_`).Replace(s)
 }
 
 // fold met en minuscules et retire les accents courants du français.
@@ -184,6 +216,11 @@ func (q Query) where() (string, []any) {
 	}
 	if q.Exploit {
 		sb.WriteString(" AND a.has_exploit = 1") // tenu à jour par RefreshHasExploit
+	}
+	if len(q.Watch) > 0 {
+		clause, wargs := watchClause(q.Watch)
+		sb.WriteString(clause)
+		args = append(args, wargs...)
 	}
 	return sb.String(), args
 }

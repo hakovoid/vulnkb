@@ -340,6 +340,10 @@ func (m *ui) handleKey(k tea.KeyMsg) tea.Cmd {
 	case "ctrl+o":
 		m.sort = (m.sort + 1) % 3 // pertinence → date → criticité
 		return m.searchCmd()
+	case "ctrl+t":
+		m.input.SetValue(toggleWord(m.input.Value(), "mes"))
+		m.input.CursorEnd()
+		return m.searchCmd()
 	}
 
 	before := m.input.Value()
@@ -450,3 +454,22 @@ func syncAge(t time.Time, now time.Time) string {
 
 // oneLine remplace les sauts de ligne d'un titre par des espaces.
 func oneLine(s string) string { return strings.Join(strings.Fields(s), " ") }
+
+// toggleWord ajoute word en tête de la saisie s'il n'y figure pas, ou le
+// retire s'il y est déjà (bascule du filtre « mes » par Ctrl-T).
+func toggleWord(s, word string) string {
+	fields := strings.Fields(s)
+	kept := fields[:0]
+	found := false
+	for _, f := range fields {
+		if strings.EqualFold(f, word) {
+			found = true
+			continue
+		}
+		kept = append(kept, f)
+	}
+	if found {
+		return strings.Join(kept, " ")
+	}
+	return strings.TrimSpace(word + " " + strings.Join(kept, " "))
+}
