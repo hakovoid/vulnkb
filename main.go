@@ -44,8 +44,12 @@ func run() error {
 	case "sync":
 		return sync(st, args)
 	case "sources":
-		for _, n := range source.Names() {
-			fmt.Println(n)
+		for _, s := range source.All() {
+			if source.IsOptional(s) {
+				fmt.Printf("%s  (à la demande : vulnkb sync %s)\n", s.Name(), s.Name())
+			} else {
+				fmt.Println(s.Name())
+			}
 		}
 		return nil
 	case "tui":
@@ -55,11 +59,11 @@ func run() error {
 	}
 }
 
-// sync collecte les sources demandées (toutes si aucune n'est nommée).
+// sync collecte les sources demandées (celles par défaut si aucune n'est nommée).
 func sync(st *store.Store, names []string) error {
 	var srcs []source.Source
 	if len(names) == 0 {
-		srcs = source.All()
+		srcs = source.Defaults()
 	} else {
 		for _, n := range names {
 			s, ok := source.Get(n)
@@ -70,12 +74,11 @@ func sync(st *store.Store, names []string) error {
 		}
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
-	defer cancel()
-
 	for _, s := range srcs {
 		fmt.Printf("→ %s… ", s.Name())
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 		advs, err := s.Fetch(ctx, time.Time{})
+		cancel()
 		if err != nil {
 			fmt.Printf("échec: %v\n", err)
 			continue

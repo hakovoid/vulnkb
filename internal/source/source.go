@@ -23,6 +23,29 @@ type Source interface {
 	Fetch(ctx context.Context, since time.Time) ([]model.Advisory, error)
 }
 
+// Optional est implémentée par les sources trop lourdes pour être collectées
+// par défaut : elles ne sont synchronisées que si on les nomme explicitement.
+type Optional interface {
+	Optional() bool
+}
+
+// IsOptional indique si la source est exclue du sync par défaut.
+func IsOptional(s Source) bool {
+	o, ok := s.(Optional)
+	return ok && o.Optional()
+}
+
+// Defaults renvoie les sources collectées par un sync sans argument.
+func Defaults() []Source {
+	var out []Source
+	for _, s := range All() {
+		if !IsOptional(s) {
+			out = append(out, s)
+		}
+	}
+	return out
+}
+
 var (
 	mu       sync.RWMutex
 	registry = map[string]Source{}

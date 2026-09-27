@@ -16,7 +16,7 @@ retrouver une info en quelques frappes.
   - Debian/Ubuntu : `sudo apt install build-essential`
   - Fedora : `sudo dnf install gcc`
 - **Accès réseau** vers GitHub (dépendances) et vers les sources de données
-  (par défaut `cisa.gov`).
+  (`cisa.gov` et `osv-vulnerabilities.storage.googleapis.com`).
 
 ---
 
@@ -50,7 +50,8 @@ CGO_ENABLED=1 go test -tags sqlite_fts5 ./...   # doit afficher "ok"
   ```sh
   GOPROXY=direct GOSUMDB=off go mod tidy
   ```
-- Pour la collecte, autorise `cisa.gov` en sortie, ou ajoute une source
+- Pour la collecte, autorise `cisa.gov` et
+  `osv-vulnerabilities.storage.googleapis.com` en sortie, ou ajoute une source
   interne à ton réseau (voir §5).
 
 ---
@@ -58,10 +59,22 @@ CGO_ENABLED=1 go test -tags sqlite_fts5 ./...   # doit afficher "ok"
 ## 3. Premier lancement
 
 ```sh
-./vulnkb sources     # liste les sources disponibles  -> cisa-kev
-./vulnkb sync        # remplit la base depuis toutes les sources
+./vulnkb sources     # liste les sources disponibles
+./vulnkb sync        # remplit la base depuis les sources par défaut
 ./vulnkb             # ouvre l'interface de recherche
 ```
+
+Sources disponibles :
+
+- `cisa-kev` : CVE activement exploitées (catalogue CISA KEV).
+- `osv-go`, `osv-pypi`, `osv-packagist`, `osv-crates`, `osv-maven` : advisories
+  OSV.dev, avec versions affectées, version corrective, CWE et liens.
+- `osv-npm` : **à la demande** (export d'environ 200 Mo), à lancer avec
+  `./vulnkb sync osv-npm`.
+
+Ordre de grandeur : un `sync` complet prend une dizaine de secondes sur une
+bonne connexion, pour environ 29 000 entrées (36 000 avec npm) et une base de
+100 à 120 Mo.
 
 `sync` affiche le nombre d'entrées récupérées par source et le total en base.
 À relancer quand tu veux rafraîchir (l'insertion est idempotente : pas de
@@ -85,16 +98,17 @@ Lance `./vulnkb` (ou `./vulnkb tui`).
 | `Tab`         | basculer le focus entre la liste et le détail |
 | `Esc` / `Ctrl-C` | quitter                                    |
 
-La recherche porte sur l'identifiant (CVE, GHSA…), le titre, le résumé, le
-composant et le type de faille. Exemples de requêtes : `libheif`, `RCE`,
-`CVE-2026`, `deserialization`. Une recherche vide affiche les entrées les plus
+La recherche porte sur l'identifiant (CVE, GHSA… et leurs alias), le titre, le
+résumé, le composant et le type de faille (CWE pour OSV). Exemples de
+requêtes : `libheif`, `RCE`, `CVE-2026`, `deserialization`, `CWE-79`,
+`golang.org/x/net`. Une recherche vide affiche les entrées les plus
 récentes.
 
 Commandes en ligne (hors TUI) :
 
 ```sh
-./vulnkb sync            # collecte toutes les sources
-./vulnkb sync cisa-kev   # collecte une source précise
+./vulnkb sync            # collecte les sources par défaut
+./vulnkb sync osv-npm    # collecte une source précise
 ./vulnkb sources         # liste les sources enregistrées
 ./vulnkb tui             # interface de recherche (= ./vulnkb sans argument)
 ```
@@ -124,8 +138,9 @@ func (s *maSource) Fetch(ctx context.Context, since time.Time) ([]model.Advisory
 ```
 
 Recompile, et la source apparaît automatiquement dans `vulnkb sources` et est
-collectée par `vulnkb sync`. Pistes : NVD, OSV.dev, GitHub Security Advisories,
-flux RSS d'éditeurs.
+collectée par `vulnkb sync`. Si elle est lourde, ajoute une méthode
+`Optional() bool` qui renvoie `true` : elle ne sera collectée que si on la
+nomme (`vulnkb sync ma-source`). Pistes : NVD (CVSS/CWE), flux RSS d'éditeurs.
 
 ---
 
@@ -136,5 +151,5 @@ flux RSS d'éditeurs.
 | `no such module fts5` / erreur à la création de la base | tag de build oublié | recompiler avec `-tags sqlite_fts5` |
 | erreur cgo / `gcc: command not found` | pas de compilateur C | installer build-essential / Xcode CLT |
 | `403 Forbidden` sur `go mod tidy` | proxy Go bloqué | `GOPROXY=direct GOSUMDB=off go mod tidy` |
-| `sync` échoue en `Forbidden` | `cisa.gov` bloqué en sortie | autoriser le domaine, ou ajouter une source interne |
+| `sync` échoue en `Forbidden` | `cisa.gov` ou le bucket OSV bloqué en sortie | autoriser le domaine, ou ajouter une source interne |
 | l'affichage TUI est bancal | terminal trop étroit / non-TTY | élargir la fenêtre, lancer dans un vrai terminal |
