@@ -1,6 +1,7 @@
 package store
 
 import (
+	"database/sql"
 	"testing"
 	"time"
 
@@ -28,7 +29,8 @@ func TestUpsertAndSearch(t *testing.T) {
 			ID: "cisa-kev:CVE-2026-0001", Source: "cisa-kev", ExternalID: "CVE-2026-0001",
 			Title: "Pre-auth RCE in ExampleVPN", Summary: "Remote code execution before authentication.",
 			Component: "ExampleVPN", VulnType: "RCE", Severity: "Known Exploited",
-			Published: time.Date(2026, 2, 1, 0, 0, 0, 0, time.UTC),
+			Remediation: "Apply mitigations per vendor instructions.",
+			Published:   time.Date(2026, 2, 1, 0, 0, 0, 0, time.UTC),
 		},
 	}
 
@@ -79,5 +81,40 @@ func TestUpsertAndSearch(t *testing.T) {
 	res, _ = st.Search("libheif", 1)
 	if len(res) != 1 || len(res[0].References) != 1 || res[0].FixedVersions != "1.23.4" {
 		t.Errorf("champs mal restitués: %+v", res)
+	}
+
+	res, _ = st.Search("ExampleVPN", 1)
+	if len(res) != 1 || res[0].Remediation != "Apply mitigations per vendor instructions." {
+		t.Errorf("remédiation mal restituée: %+v", res)
+	}
+}
+
+func TestMigrateAddsRemediation(t *testing.T) {
+	path := t.TempDir() + "/old.db"
+	db, err := sql.Open("sqlite3", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = db.Exec(`CREATE TABLE advisories (
+		id TEXT PRIMARY KEY, source TEXT NOT NULL, external_id TEXT, title TEXT,
+		summary TEXT, component TEXT, vuln_type TEXT, severity TEXT,
+		affected_versions TEXT, fixed_versions TEXT, references_json TEXT,
+		published INTEGER, fetched INTEGER, url TEXT);
+	INSERT INTO advisories (id, source, external_id, title, summary, component, vuln_type,
+		severity, affected_versions, fixed_versions, references_json, published, fetched, url)
+	VALUES ('x:1', 'x', 'CVE-1', 't', 's', 'c', 'v', 'sev', '', '', '', 0, 0, '');`)
+	db.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	st, err := Open(path)
+	if err != nil {
+		t.Fatalf("ouverture d'une base sans colonne remediation: %v", err)
+	}
+	defer st.Close()
+	res, err := st.Search("", 10)
+	if err != nil || len(res) != 1 || res[0].Remediation != "" {
+		t.Fatalf("lecture après migration: %v %+v", err, res)
 	}
 }

@@ -12,6 +12,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"regexp"
+	"strings"
 	"time"
 
 	"vulnkb/internal/model"
@@ -69,21 +71,40 @@ func (c *cisaKEV) Fetch(ctx context.Context, since time.Time) ([]model.Advisory,
 		if !since.IsZero() && pub.Before(since) {
 			continue
 		}
+		nvd := "https://nvd.nist.gov/vuln/detail/" + v.CveID
 		out = append(out, model.Advisory{
-			ID:         "cisa-kev:" + v.CveID,
-			Source:     c.Name(),
-			ExternalID: v.CveID,
-			Title:      v.VulnerabilityName,
-			Summary:    v.ShortDescription,
-			Component:  v.VendorProject + " " + v.Product,
-			Severity:   "Known Exploited",
-			References: []string{"https://nvd.nist.gov/vuln/detail/" + v.CveID},
-			Published:  pub,
-			Fetched:    now,
-			URL:        "https://nvd.nist.gov/vuln/detail/" + v.CveID,
+			ID:          "cisa-kev:" + v.CveID,
+			Source:      c.Name(),
+			ExternalID:  v.CveID,
+			Title:       v.VulnerabilityName,
+			Summary:     v.ShortDescription,
+			Component:   v.VendorProject + " " + v.Product,
+			Severity:    "Known Exploited",
+			Remediation: strings.TrimSpace(v.RequiredAction),
+			References:  noteRefs(nvd, v.Notes),
+			Published:   pub,
+			Fetched:     now,
+			URL:         nvd,
 		})
 	}
 	return out, nil
+}
+
+var urlRe = regexp.MustCompile(`https?://[^\s;,]+`)
+
+// noteRefs renvoie le lien NVD suivi des URL (avis éditeur, correctif…)
+// listées dans le champ notes du flux KEV, sans doublon.
+func noteRefs(nvd, notes string) []string {
+	refs := []string{nvd}
+	seen := map[string]bool{nvd: true}
+	for _, u := range urlRe.FindAllString(notes, -1) {
+		u = strings.TrimRight(u, ".)")
+		if !seen[u] {
+			seen[u] = true
+			refs = append(refs, u)
+		}
+	}
+	return refs
 }
 
 func parseDate(s string) time.Time {

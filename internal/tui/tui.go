@@ -235,6 +235,10 @@ func (u *ui) renderDetail(b *strings.Builder, h int) {
 		lines = append(lines, "")
 		lines = append(lines, wrapLines(a.Summary, u.cols)...)
 	}
+	if strings.TrimSpace(a.Remediation) != "" {
+		lines = append(lines, "", cyan+"Remédiation:"+reset)
+		lines = append(lines, wrapLines(a.Remediation, u.cols)...)
+	}
 	if len(a.References) > 0 {
 		lines = append(lines, "", cyan+"Références:"+reset)
 		for _, r := range a.References {

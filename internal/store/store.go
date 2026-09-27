@@ -48,6 +48,7 @@ CREATE TABLE IF NOT EXISTS advisories (
     severity          TEXT,
     affected_versions TEXT,
     fixed_versions    TEXT,
+    remediation       TEXT,
     references_json   TEXT,
     published         INTEGER,
     fetched           INTEGER,
@@ -79,9 +80,26 @@ CREATE TRIGGER IF NOT EXISTS advisories_au AFTER UPDATE ON advisories BEGIN
     VALUES (new.rowid, new.external_id, new.title, new.summary, new.component, new.vuln_type);
 END;
 `
-	_, err := s.db.Exec(schema)
-	if err != nil {
+	if _, err := s.db.Exec(schema); err != nil {
 		return fmt.Errorf("migration: %w", err)
+	}
+	return s.addColumnIfMissing("advisories", "remediation", "TEXT")
+}
+
+// addColumnIfMissing fait évoluer les bases créées avant l'ajout d'une colonne.
+func (s *Store) addColumnIfMissing(table, column, typ string) error {
+	var n int
+	err := s.db.QueryRow(
+		`SELECT COUNT(*) FROM pragma_table_info(?) WHERE name = ?`, table, column,
+	).Scan(&n)
+	if err != nil {
+		return fmt.Errorf("migration %s.%s: %w", table, column, err)
+	}
+	if n > 0 {
+		return nil
+	}
+	if _, err := s.db.Exec(fmt.Sprintf(`ALTER TABLE %s ADD COLUMN %s %s`, table, column, typ)); err != nil {
+		return fmt.Errorf("migration %s.%s: %w", table, column, err)
 	}
 	return nil
 }
@@ -98,13 +116,14 @@ func (s *Store) Upsert(advs []model.Advisory) (int, error) {
 	stmt, err := tx.Prepare(`
 INSERT INTO advisories
   (id, source, external_id, title, summary, component, vuln_type, severity,
-   affected_versions, fixed_versions, references_json, published, fetched, url)
-VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+   affected_versions, fixed_versions, remediation, references_json, published, fetched, url)
+VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
 ON CONFLICT(id) DO UPDATE SET
    source=excluded.source, external_id=excluded.external_id, title=excluded.title,
    summary=excluded.summary, component=excluded.component, vuln_type=excluded.vuln_type,
    severity=excluded.severity, affected_versions=excluded.affected_versions,
-   fixed_versions=excluded.fixed_versions, references_json=excluded.references_json,
+   fixed_versions=excluded.fixed_versions, remediation=excluded.remediation,
+   references_json=excluded.references_json,
    published=excluded.published, fetched=excluded.fetched, url=excluded.url`)
 	if err != nil {
 		return 0, err
@@ -118,7 +137,7 @@ ON CONFLICT(id) DO UPDATE SET
 		}
 		_, err := stmt.Exec(
 			a.ID, a.Source, a.ExternalID, a.Title, a.Summary, a.Component,
-			a.VulnType, a.Severity, a.AffectedVersions, a.FixedVersions,
+			a.VulnType, a.Severity, a.AffectedVersions, a.FixedVersions, a.Remediation,
 			strings.Join(a.References, "\n"), unix(a.Published), unix(a.Fetched), a.URL,
 		)
 		if err != nil {
@@ -142,12 +161,12 @@ func (s *Store) Search(query string, limit int) ([]model.Advisory, error) {
 	if strings.TrimSpace(query) == "" {
 		rows, err = s.db.Query(`
 SELECT id, source, external_id, title, summary, component, vuln_type, severity,
-       affected_versions, fixed_versions, references_json, published, fetched, url
+       affected_versions, fixed_versions, remediation, references_json, published, fetched, url
 FROM advisories ORDER BY published DESC LIMIT ?`, limit)
 	} else {
 		rows, err = s.db.Query(`
 SELECT a.id, a.source, a.external_id, a.title, a.summary, a.component, a.vuln_type,
-       a.severity, a.affected_versions, a.fixed_versions, a.references_json,
+       a.severity, a.affected_versions, a.fixed_versions, a.remediation, a.references_json,
        a.published, a.fetched, a.url
 FROM advisories_fts f
 JOIN advisories a ON a.rowid = f.rowid
@@ -173,14 +192,16 @@ func scan(rows *sql.Rows) ([]model.Advisory, error) {
 	for rows.Next() {
 		var a model.Advisory
 		var refs string
+		var remediation sql.NullString
 		var pub, fetched int64
 		if err := rows.Scan(
 			&a.ID, &a.Source, &a.ExternalID, &a.Title, &a.Summary, &a.Component,
 			&a.VulnType, &a.Severity, &a.AffectedVersions, &a.FixedVersions,
-			&refs, &pub, &fetched, &a.URL,
+			&remediation, &refs, &pub, &fetched, &a.URL,
 		); err != nil {
 			return nil, err
 		}
+		a.Remediation = remediation.String
 		if refs != "" {
 			a.References = strings.Split(refs, "\n")
 		}

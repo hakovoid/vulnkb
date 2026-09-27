@@ -32,6 +32,9 @@ type Advisory struct {
 	AffectedVersions string
 	FixedVersions    string
 
+	// Action de remédiation recommandée par la source.
+	Remediation string
+
 	// Liens vers les sources originales (advisory, commit, article…).
 	References []string
 
