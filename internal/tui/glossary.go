@@ -156,6 +156,8 @@ func helpLines() []string {
 		"  Début / Fin      premier / dernier résultat",
 		"  Ctrl-G           aller directement au résultat n° … (ex. 23456, puis Entrée)",
 		"  Tab              passer de la liste au détail et inversement",
+		"  Ctrl-← / Ctrl-→  élargir / rétrécir le panneau liste (ou glisser la séparation à la souris)",
+		"  molette          faire défiler la liste ou le détail selon le panneau survolé",
 		"  Entrée           ouvrir la fiche en plein écran (Entrée ou Esc pour revenir)",
 		"  ?                afficher / fermer cette aide",
 		"  Esc / Ctrl-C     quitter (Esc ferme d'abord l'aide)",

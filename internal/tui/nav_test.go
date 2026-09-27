@@ -164,7 +164,7 @@ func TestViewRendersLayout(t *testing.T) {
 	press(m, "ctrl+g", "234", "enter")
 	v := m.View()
 	for _, want := range []string{"vulnkb", "résultat 234", "/ 500", "RÉSULTATS", "DÉTAIL", "E266", "ÉLEVÉ",
-		"Corrigé dans", "lib 1.2.3", "ouvrir la fiche"} {
+		"Corrigé dans", "lib 1.2.3", "fiche"} {
 		if !strings.Contains(stripANSI(v), want) {
 			t.Errorf("rendu sans %q", want)
 		}
@@ -188,5 +188,42 @@ func TestViewRendersLayout(t *testing.T) {
 	}
 	if got := syncAge(time.Now().Add(-2*time.Hour-time.Minute), time.Now()); got != "il y a 2 h" {
 		t.Errorf("syncAge: %q", got)
+	}
+}
+
+func TestSplitResize(t *testing.T) {
+	m := navUI(t, 50) // 120 de large → disposition côte à côte
+	def := m.geometry().listW
+	press(m, "ctrl+right")
+	if m.geometry().listW <= def {
+		t.Errorf("Ctrl-→ n'élargit pas la liste (%d ≤ %d)", m.geometry().listW, def)
+	}
+	press(m, "ctrl+left", "ctrl+left")
+	if m.geometry().listW >= def {
+		t.Errorf("Ctrl-← ne rétrécit pas la liste")
+	}
+	// bornes respectées
+	for i := 0; i < 40; i++ {
+		press(m, "ctrl+left")
+	}
+	if m.splitPct != splitMin {
+		t.Errorf("borne basse non respectée: %d", m.splitPct)
+	}
+	for i := 0; i < 40; i++ {
+		press(m, "ctrl+right")
+	}
+	if m.splitPct != splitMax {
+		t.Errorf("borne haute non respectée: %d", m.splitPct)
+	}
+	// glissé souris à ~30 % de la largeur
+	m.Update(tea.MouseMsg{X: 36, Y: 10, Action: tea.MouseActionMotion, Button: tea.MouseButtonLeft})
+	if m.splitPct != 30 {
+		t.Errorf("glissé souris: splitPct=%d, attendu 30", m.splitPct)
+	}
+	// molette dans la liste fait descendre le curseur
+	before := m.cursor
+	m.Update(tea.MouseMsg{X: 5, Y: 8, Button: tea.MouseButtonWheelDown})
+	if m.cursor <= before {
+		t.Errorf("molette liste: curseur %d → %d", before, m.cursor)
 	}
 }

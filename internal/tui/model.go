@@ -39,6 +39,7 @@ type ui struct {
 	detailID      string // entrée affichée dans le détail
 	detailW       int
 
+	splitPct int  // largeur du panneau liste, en % (disposition côte à côte)
 	detFocus bool // Tab : flèches pour le détail
 	zoom     bool // Entrée : fiche en plein écran
 	help     bool
@@ -57,9 +58,16 @@ type ui struct {
 func Run(st *store.Store) error {
 	initTheme()
 	m := newUI(st)
-	_, err := tea.NewProgram(m, tea.WithAltScreen()).Run()
+	_, err := tea.NewProgram(m, tea.WithAltScreen(), tea.WithMouseCellMotion()).Run()
 	return err
 }
+
+// splitMin / splitMax bornent la largeur du panneau liste (en %).
+const (
+	splitMin     = 25
+	splitMax     = 70
+	splitDefault = 42
+)
 
 func newUI(st *store.Store) *ui {
 	in := textinput.New()
@@ -70,7 +78,7 @@ func newUI(st *store.Store) *ui {
 	in.Cursor.Style = sty.accent
 	in.Focus()
 
-	m := &ui{st: st, input: in, detail: viewport.New(0, 0)}
+	m := &ui{st: st, input: in, detail: viewport.New(0, 0), splitPct: splitDefault}
 	m.total, _ = st.CountMatches("")
 	m.kev, _ = st.CVEIndex("cisa-kev")
 	m.certfr, _ = st.CVEIndex("certfr")
@@ -211,6 +219,10 @@ func (m *ui) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.applySearch(msg)
 		m.layout()
 		return m, nil
+	case tea.MouseMsg:
+		m.handleMouse(msg)
+		m.syncDetail()
+		return m, nil
 	case tea.KeyMsg:
 		cmd := m.handleKey(msg)
 		m.syncDetail()
@@ -219,6 +231,63 @@ func (m *ui) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 	m.input, cmd = m.input.Update(msg)
 	return m, cmd
+}
+
+// handleMouse gère la molette (défilement) et le glissé sur la séparation des
+// panneaux (redimensionnement).
+func (m *ui) handleMouse(e tea.MouseMsg) {
+	if m.help || m.zoom {
+		if e.Button == tea.MouseButtonWheelUp {
+			m.detail.LineUp(3)
+		} else if e.Button == tea.MouseButtonWheelDown {
+			m.detail.LineDown(3)
+		}
+		return
+	}
+	g := m.geometry()
+	overDetail := !g.stacked && g.listW > 0 && e.X > g.listW
+	switch e.Button {
+	case tea.MouseButtonWheelUp:
+		if overDetail {
+			m.detail.LineUp(3)
+		} else {
+			m.setCursor(m.cursor - 3)
+		}
+		return
+	case tea.MouseButtonWheelDown:
+		if overDetail {
+			m.detail.LineDown(3)
+		} else {
+			m.setCursor(m.cursor + 3)
+		}
+		return
+	}
+	// glissé gauche sur/près de la séparation → nouvelle largeur
+	if g.stacked || g.listW == 0 || e.Button != tea.MouseButtonLeft {
+		return
+	}
+	if e.Action == tea.MouseActionPress && abs(e.X-g.listW) > 2 {
+		return // clic ailleurs : on ne redimensionne pas
+	}
+	if e.Action == tea.MouseActionPress || e.Action == tea.MouseActionMotion {
+		m.setSplit(e.X * 100 / max(1, m.width))
+	}
+}
+
+// setSplit fixe la largeur du panneau liste (en %), bornée, et recompose.
+func (m *ui) setSplit(pct int) {
+	pct = max(splitMin, min(splitMax, pct))
+	if pct != m.splitPct {
+		m.splitPct = pct
+		m.layout()
+	}
+}
+
+func abs(n int) int {
+	if n < 0 {
+		return -n
+	}
+	return n
 }
 
 func (m *ui) handleKey(k tea.KeyMsg) tea.Cmd {
@@ -258,6 +327,12 @@ func (m *ui) handleKey(k tea.KeyMsg) tea.Cmd {
 		return nil
 	case "up", "down", "pgup", "pgdown", "home", "end":
 		m.navigate(key)
+		return nil
+	case "ctrl+left":
+		m.setSplit(m.splitPct - 4)
+		return nil
+	case "ctrl+right":
+		m.setSplit(m.splitPct + 4)
 		return nil
 	}
 

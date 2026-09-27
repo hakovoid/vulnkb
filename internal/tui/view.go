@@ -47,7 +47,11 @@ func (m *ui) geometry() geometry {
 	case m.zoom:
 		return geometry{detW: w, detH: body}
 	case w >= 100:
-		lw := max(50, min(90, w/2))
+		pct := m.splitPct
+		if pct == 0 {
+			pct = splitDefault
+		}
+		lw := max(30, min(w-30, w*pct/100))
 		return geometry{listW: lw, listH: body, detW: w - lw - 1, detH: body}
 	default:
 		lh := max(7, body*45/100)
@@ -159,8 +163,8 @@ func (m *ui) statusView(w int) string {
 	case m.zoom:
 		items = []kv{{"↑↓ pgup pgdn", "défiler"}, {"entrée esc", "revenir à la liste"}, {"? ", "aide"}}
 	default:
-		items = []kv{{"↑↓", "naviguer"}, {"pgup pgdn", "page"}, {"tab", "liste/détail"},
-			{"entrée", "ouvrir la fiche"}, {"^g", "aller au n°"}, {"?", "aide"}, {"esc", "quitter"}}
+		items = []kv{{"↑↓", "naviguer"}, {"tab", "liste/détail"}, {"^←→", "largeur"},
+			{"entrée", "fiche"}, {"^g", "n°"}, {"?", "aide"}, {"esc", "quitter"}}
 	}
 	var parts []string
 	for _, it := range items {
