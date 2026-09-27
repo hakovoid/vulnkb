@@ -2,9 +2,11 @@ package tui
 
 import (
 	"fmt"
-	"math"
 	"regexp"
 	"strings"
+
+	"vulnkb/internal/model"
+	"vulnkb/internal/store"
 )
 
 const (
@@ -18,38 +20,16 @@ const (
 	gray    = "\x1b[90m"
 )
 
-// severity est une gravité ramenée à une échelle commune, quelle que soit la
-// façon dont la source l'exprime (libellé, vecteur CVSS…).
+// severity est la gravité normalisée (voir model.ParseSeverity), avec ses
+// attributs d'affichage.
 type severity struct {
-	level int    // 4 critique … 1 faible, 0 inconnue
-	score string // score CVSS calculé, si la source ne donne qu'un vecteur
+	level int
+	score string
 }
-
-var sevLevels = map[string]int{"CRITICAL": 4, "HIGH": 3, "MODERATE": 2, "MEDIUM": 2, "LOW": 1}
 
 func parseSeverity(raw string) severity {
-	raw = strings.TrimSpace(raw)
-	if l, ok := sevLevels[strings.ToUpper(raw)]; ok {
-		return severity{level: l}
-	}
-	if score, ok := cvss3Score(raw); ok {
-		return severity{level: levelForScore(score), score: fmt.Sprintf("%.1f", score)}
-	}
-	return severity{}
-}
-
-func levelForScore(s float64) int {
-	switch {
-	case s >= 9:
-		return 4
-	case s >= 7:
-		return 3
-	case s >= 4:
-		return 2
-	case s > 0:
-		return 1
-	}
-	return 0
+	s := model.ParseSeverity(raw)
+	return severity{level: s.Level, score: s.Score}
 }
 
 func (s severity) color() string {
@@ -65,68 +45,37 @@ func (s severity) label() string {
 	return [...]string{"inconnue", "Faible", "Moyenne", "Élevée", "Critique"}[s.level]
 }
 
-// cvss3Score calcule le score de base d'un vecteur CVSS 3.0/3.1
-// (spécification FIRST, section 7).
-func cvss3Score(vector string) (float64, bool) {
-	if !strings.HasPrefix(vector, "CVSS:3.") {
-		return 0, false
-	}
-	m := map[string]string{}
-	for _, part := range strings.Split(vector, "/")[1:] {
-		if k, v, ok := strings.Cut(part, ":"); ok {
-			m[k] = v
+// describeFilters résume les filtres reconnus dans la saisie, pour que
+// l'utilisateur voie ce qui est réellement appliqué.
+func describeFilters(q store.Query) string {
+	var parts []string
+	if len(q.Severities) > 0 {
+		var names []string
+		for _, l := range q.Severities {
+			s := severity{level: l}
+			names = append(names, s.color()+strings.ToLower(s.label())+reset+dim)
 		}
+		parts = append(parts, "sévérité "+strings.Join(names, ", "))
 	}
-	changed := m["S"] == "C"
-	av := map[string]float64{"N": 0.85, "A": 0.62, "L": 0.55, "P": 0.2}
-	ac := map[string]float64{"L": 0.77, "H": 0.44}
-	pr := map[string]float64{"N": 0.85, "L": 0.62, "H": 0.27}
-	if changed {
-		pr["L"], pr["H"] = 0.68, 0.5
-	}
-	ui := map[string]float64{"N": 0.85, "R": 0.62}
-	cia := map[string]float64{"H": 0.56, "L": 0.22, "N": 0}
-
-	get := func(tbl map[string]float64, k string) (float64, bool) {
-		v, ok := tbl[m[k]]
-		return v, ok
-	}
-	vals := make([]float64, 0, 7)
-	for _, p := range []struct {
-		tbl map[string]float64
-		key string
-	}{{av, "AV"}, {ac, "AC"}, {pr, "PR"}, {ui, "UI"}, {cia, "C"}, {cia, "I"}, {cia, "A"}} {
-		v, ok := get(p.tbl, p.key)
-		if !ok {
-			return 0, false
+	if len(q.Sources) > 0 {
+		var names []string
+		for _, s := range q.Sources {
+			info := sourceOf(s)
+			names = append(names, info.color+strings.TrimSpace(info.badge)+reset+dim)
 		}
-		vals = append(vals, v)
+		parts = append(parts, "source "+strings.Join(names, ", "))
 	}
-
-	iss := 1 - (1-vals[4])*(1-vals[5])*(1-vals[6])
-	var impact float64
-	if changed {
-		impact = 7.52*(iss-0.029) - 3.25*math.Pow(iss-0.02, 15)
-	} else {
-		impact = 6.42 * iss
+	if q.Exploited {
+		parts = append(parts, boldRed+"exploitées"+reset+dim)
 	}
-	if impact <= 0 {
-		return 0, true
+	out := ""
+	if len(parts) > 0 {
+		out = dim + "   filtres : " + strings.Join(parts, " · ") + reset
 	}
-	expl := 8.22 * vals[0] * vals[1] * vals[2] * vals[3]
-	if changed {
-		return roundUp(math.Min(1.08*(impact+expl), 10)), true
+	if len(q.Invalid) > 0 {
+		out += "   " + red + "filtre non reconnu : " + strings.Join(q.Invalid, " ") + reset + dim + " (? aide)" + reset
 	}
-	return roundUp(math.Min(impact+expl, 10)), true
-}
-
-// roundUp est l'arrondi supérieur à une décimale défini par CVSS 3.1.
-func roundUp(x float64) float64 {
-	i := int(math.Round(x * 100000))
-	if i%10000 == 0 {
-		return float64(i) / 100000
-	}
-	return float64(i/10000+1) / 10
+	return out
 }
 
 type sourceInfo struct {

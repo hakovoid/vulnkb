@@ -117,9 +117,26 @@ vecteur CVSS 3.x, le score est calculé et affiché dans le détail. Le détail
 donne aussi le nom en clair des CWE courantes.
 
 La recherche porte sur l'identifiant (CVE, GHSA… et leurs alias), le titre, le
-résumé, le composant et le type de faille (CWE pour OSV). Exemples de
-requêtes : `libheif`, `RCE`, `CVE-2026`, `deserialization`, `CWE-79`,
-`golang.org/x/net`. Une recherche vide affiche toutes les entrées, les plus
+résumé, le composant, le type de faille (CWE pour OSV, risques pour le
+CERT-FR), les versions affectées et corrigées, et la remédiation. Chaque mot
+est un début de mot, plusieurs mots se cumulent, casse et accents sont
+ignorés. Exemples : `libheif`, `RCE`, `CVE-2026`, `deserializ`, `CWE-79`,
+`golang.org/x/net`, `1.27.1`.
+
+Des filtres se combinent au texte :
+
+| Filtre | Effet |
+|--------|-------|
+| `sev:crit` | sévérité critique (`crit`, `high`, `med`, `low`, `inconnue` ; ou `critique`, `elevee`, `moyenne`, `faible`) |
+| `sev:crit,high` | plusieurs sévérités |
+| `sev:high+` | cette sévérité ou plus grave |
+| `src:kev` | une source (`kev`, `osv`, `fr`, `ia`) ; `src:kev,fr` pour plusieurs |
+| `exploitee` | failles exploitées activement : CVE présent dans CISA KEV, toutes sources confondues |
+
+Exemples : `nginx sev:high+ src:osv`, `exploitee src:fr`, `sev:crit gitea`.
+Les filtres reconnus s'affichent à droite de la saisie ; un filtre mal écrit
+est signalé en rouge. Les entrées CISA KEV et CERT-FR n'ont pas de sévérité :
+elles tombent dans `sev:inconnue`. Une recherche vide affiche toutes les entrées, les plus
 récentes en premier. L'en-tête indique la position (« résultat 1 234 /
 30 559 ») ; tous les résultats sont accessibles, pas seulement les premiers.
 

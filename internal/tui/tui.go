@@ -331,7 +331,7 @@ func (u *ui) render() {
 		if !u.detFocus {
 			focusMark = cyan + "▌" + reset
 		}
-		b.WriteString(focusMark + "recherche: " + bold + string(u.query) + reset + "_\r\n")
+		b.WriteString(trunc(focusMark+"recherche: "+bold+string(u.query)+reset+"_"+describeFilters(store.ParseQuery(string(u.query))), u.cols) + reset + "\r\n")
 	}
 	b.WriteString(strings.Repeat("─", maxi(1, u.cols)) + "\r\n")
 
