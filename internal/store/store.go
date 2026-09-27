@@ -56,6 +56,8 @@ CREATE TABLE IF NOT EXISTS advisories (
     url               TEXT
 );
 
+CREATE INDEX IF NOT EXISTS advisories_published ON advisories(published DESC, id);
+
 CREATE VIRTUAL TABLE IF NOT EXISTS advisories_fts USING fts5(
     external_id,
     title,
@@ -152,9 +154,16 @@ ON CONFLICT(id) DO UPDATE SET
 // Search interroge l'index plein-texte. Une requête vide renvoie les
 // entrées les plus récentes.
 func (s *Store) Search(query string, limit int) ([]model.Advisory, error) {
+	return s.SearchPage(query, 0, limit)
+}
+
+// SearchPage renvoie limit résultats à partir du rang offset (0 = premier).
+// L'ordre est stable d'une page à l'autre.
+func (s *Store) SearchPage(query string, offset, limit int) ([]model.Advisory, error) {
 	if limit <= 0 {
 		limit = 50
 	}
+	offset = max(0, offset)
 	var (
 		rows *sql.Rows
 		err  error
@@ -163,7 +172,7 @@ func (s *Store) Search(query string, limit int) ([]model.Advisory, error) {
 		rows, err = s.db.Query(`
 SELECT id, source, external_id, title, summary, component, vuln_type, severity,
        affected_versions, fixed_versions, remediation, references_json, published, fetched, url
-FROM advisories ORDER BY published DESC LIMIT ?`, limit)
+FROM advisories ORDER BY published DESC, id LIMIT ? OFFSET ?`, limit, offset)
 	} else {
 		rows, err = s.db.Query(`
 SELECT a.id, a.source, a.external_id, a.title, a.summary, a.component, a.vuln_type,
@@ -172,13 +181,23 @@ SELECT a.id, a.source, a.external_id, a.title, a.summary, a.component, a.vuln_ty
 FROM advisories_fts f
 JOIN advisories a ON a.rowid = f.rowid
 WHERE advisories_fts MATCH ?
-ORDER BY rank LIMIT ?`, ftsQuery(query), limit)
+ORDER BY rank, a.id LIMIT ? OFFSET ?`, ftsQuery(query), limit, offset)
 	}
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 	return scan(rows)
+}
+
+// CountMatches renvoie le nombre total de résultats d'une recherche.
+func (s *Store) CountMatches(query string) (int, error) {
+	if strings.TrimSpace(query) == "" {
+		return s.Count()
+	}
+	var n int
+	err := s.db.QueryRow(`SELECT COUNT(*) FROM advisories_fts WHERE advisories_fts MATCH ?`, ftsQuery(query)).Scan(&n)
+	return n, err
 }
 
 // Ref désigne brièvement une entrée, pour les renvois entre sources.

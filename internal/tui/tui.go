@@ -31,11 +31,22 @@ const (
 	showCur = "\x1b[?25h"
 )
 
+const titleColor = "\x1b[1;93m"
+
+// window est le nombre de résultats gardés en mémoire autour de la position
+// courante ; le reste est relu en base à la demande.
+const window = 200
+
 type ui struct {
 	st       *store.Store
 	query    []rune
-	results  []model.Advisory
-	cursor   int
+	results  []model.Advisory // résultats de rang offset à offset+len-1
+	offset   int
+	matches  int // nombre total de résultats de la recherche
+	cursor   int // rang absolu de l'entrée sélectionnée
+	top      int // rang de la première ligne affichée
+	listH    int
+	detH     int
 	rows     int
 	cols     int
 	total    int
@@ -43,6 +54,8 @@ type ui struct {
 	detScr   int
 	help     bool
 	helpScr  int
+	gotoMode bool
+	gotoBuf  []rune
 	kev      map[string][]store.Ref // CVE -> entrées CISA KEV
 	certfr   map[string][]store.Ref // CVE -> avis CERT-FR
 }
@@ -78,15 +91,67 @@ func Run(st *store.Store) error {
 	}
 }
 
+// reload relance la recherche après un changement de saisie.
 func (u *ui) reload() {
-	res, err := u.st.Search(string(u.query), 200)
-	if err == nil {
-		u.results = res
+	if n, err := u.st.CountMatches(string(u.query)); err == nil {
+		u.matches = n
+	} else {
+		u.matches = 0
 	}
-	if u.cursor >= len(u.results) {
-		u.cursor = maxi(0, len(u.results)-1)
+	u.cursor, u.top, u.offset, u.detScr = 0, 0, 0, 0
+	u.results = nil
+	u.fetchWindow(0)
+}
+
+func (u *ui) fetchWindow(offset int) {
+	res, err := u.st.SearchPage(string(u.query), offset, window)
+	if err != nil {
+		res = nil
 	}
-	u.detScr = 0
+	u.offset, u.results = offset, res
+}
+
+// current renvoie l'entrée sélectionnée.
+func (u *ui) current() (model.Advisory, bool) {
+	i := u.cursor - u.offset
+	if i < 0 || i >= len(u.results) {
+		return model.Advisory{}, false
+	}
+	return u.results[i], true
+}
+
+// setCursor place la sélection au rang n (borné aux résultats).
+func (u *ui) setCursor(n int) {
+	n = maxi(0, minInt(n, u.matches-1))
+	if n != u.cursor {
+		u.cursor, u.detScr = n, 0
+	}
+	u.ensureVisible(maxi(1, u.listH))
+}
+
+// ensureVisible fait défiler la liste pour montrer la sélection, et recharge
+// la fenêtre en mémoire si les lignes à afficher en sortent.
+func (u *ui) ensureVisible(h int) {
+	if u.cursor < u.top {
+		u.top = u.cursor
+	}
+	if u.cursor >= u.top+h {
+		u.top = u.cursor - h + 1
+	}
+	u.top = maxi(0, minInt(u.top, u.matches-h))
+	end := minInt(u.top+h, u.matches)
+	if u.top < u.offset || end > u.offset+len(u.results) {
+		u.fetchWindow(maxi(0, u.top-(window-h)/2))
+	}
+}
+
+// keys associe les séquences envoyées par le terminal aux touches spéciales.
+var keys = map[string]string{
+	"\x1b[A": "up", "\x1bOA": "up",
+	"\x1b[B": "down", "\x1bOB": "down",
+	"\x1b[5~": "pgup", "\x1b[6~": "pgdn",
+	"\x1b[H": "home", "\x1bOH": "home", "\x1b[1~": "home", "\x1b[7~": "home",
+	"\x1b[F": "end", "\x1bOF": "end", "\x1b[4~": "end", "\x1b[8~": "end",
 }
 
 // handle traite une saisie clavier et renvoie true s'il faut quitter.
@@ -94,15 +159,36 @@ func (u *ui) handle(b []byte) bool {
 	if len(b) == 1 && b[0] == 3 { // ctrl+c
 		return true
 	}
+	key := keys[string(b)]
 	if u.help {
 		switch {
 		case len(b) == 1 && (b[0] == 27 || b[0] == '?' || b[0] == 'q'):
 			u.help = false
-		case len(b) >= 3 && b[0] == 27 && b[1] == '[' && b[2] == 'A':
+		case key == "up":
 			u.helpScr = maxi(0, u.helpScr-1)
-		case len(b) >= 3 && b[0] == 27 && b[1] == '[' && b[2] == 'B':
+		case key == "down":
 			u.helpScr++
+		case key == "pgup":
+			u.helpScr = maxi(0, u.helpScr-u.listH)
+		case key == "pgdn":
+			u.helpScr += u.listH
 		}
+		return false
+	}
+	if u.gotoMode {
+		u.handleGoto(b)
+		return false
+	}
+
+	switch key {
+	case "up":
+		u.moveUp()
+		return false
+	case "down":
+		u.moveDown()
+		return false
+	case "pgup", "pgdn", "home", "end":
+		u.jump(key)
 		return false
 	}
 
@@ -111,15 +197,12 @@ func (u *ui) handle(b []byte) bool {
 	case len(b) == 1 && b[0] == '?':
 		u.help, u.helpScr = true, 0
 		return false
+	case len(b) == 1 && b[0] == 7: // ctrl+g : aller à une entrée
+		u.gotoMode, u.gotoBuf = true, nil
+		return false
 	case len(b) == 1 && b[0] == 27: // esc seul
 		return true
-	case b[0] == 27 && len(b) >= 3 && b[1] == '[': // séquence flèche
-		switch b[2] {
-		case 'A': // haut
-			u.moveUp()
-		case 'B': // bas
-			u.moveDown()
-		}
+	case b[0] == 27: // autre séquence non gérée
 		return false
 	case len(b) == 1 && b[0] == '\t': // tab : bascule liste/détail
 		u.detFocus = !u.detFocus
@@ -149,19 +232,83 @@ func (u *ui) handle(b []byte) bool {
 func (u *ui) moveUp() {
 	if u.detFocus {
 		u.detScr = maxi(0, u.detScr-1)
-	} else if u.cursor > 0 {
-		u.cursor--
-		u.detScr = 0
+	} else {
+		u.setCursor(u.cursor - 1)
 	}
 }
 
 func (u *ui) moveDown() {
 	if u.detFocus {
 		u.detScr++
-	} else if u.cursor < len(u.results)-1 {
-		u.cursor++
-		u.detScr = 0
+	} else {
+		u.setCursor(u.cursor + 1)
 	}
+}
+
+// jump gère PgUp/PgDn/Début/Fin, dans la liste ou dans le détail.
+func (u *ui) jump(key string) {
+	if u.detFocus {
+		switch key {
+		case "pgup":
+			u.detScr = maxi(0, u.detScr-maxi(1, u.detH-1))
+		case "pgdn":
+			u.detScr += maxi(1, u.detH-1)
+		case "home":
+			u.detScr = 0
+		case "end":
+			u.detScr = 1 << 30 // borné au rendu
+		}
+		return
+	}
+	page := maxi(1, u.listH-1)
+	switch key {
+	case "pgup":
+		u.setCursor(u.cursor - page)
+	case "pgdn":
+		u.setCursor(u.cursor + page)
+	case "home":
+		u.setCursor(0)
+	case "end":
+		u.setCursor(u.matches - 1)
+	}
+}
+
+// handleGoto gère la saisie du numéro d'entrée après Ctrl-G.
+func (u *ui) handleGoto(b []byte) {
+	switch {
+	case len(b) == 1 && b[0] == 27:
+		u.gotoMode = false
+	case len(b) == 1 && (b[0] == '\r' || b[0] == '\n'):
+		u.gotoMode = false
+		if n, err := strconv.Atoi(string(u.gotoBuf)); err == nil && n >= 1 {
+			u.detFocus = false
+			u.top = n - 1 - u.listH/2 // centre l'entrée à l'écran
+			u.setCursor(n - 1)
+		}
+	case len(b) == 1 && (b[0] == 127 || b[0] == 8):
+		if len(u.gotoBuf) > 0 {
+			u.gotoBuf = u.gotoBuf[:len(u.gotoBuf)-1]
+		}
+	default:
+		for _, r := range string(b) {
+			if r >= '0' && r <= '9' && len(u.gotoBuf) < 9 {
+				u.gotoBuf = append(u.gotoBuf, r)
+			}
+		}
+	}
+}
+
+// fmtInt groupe les milliers : 23456 -> « 23 456 ».
+func fmtInt(n int) string {
+	s := strconv.Itoa(n)
+	var out []byte
+	for i := range s {
+		if i > 0 && (len(s)-i)%3 == 0 {
+			out = append(out, ' ')
+		}
+		out = append(out, s[i])
+	}
+	return string(out)
 }
 
 func (u *ui) render() {
@@ -171,31 +318,41 @@ func (u *ui) render() {
 
 	// en-tête + recherche
 	b.WriteString(bold + cyan + " vulnkb " + reset)
-	b.WriteString(dim + fmt.Sprintf(" %d entrées · %d résultats", u.total, len(u.results)) + reset + "\r\n")
-	focusMark := ""
-	if !u.detFocus {
-		focusMark = cyan + "▌" + reset
+	pos := "aucun résultat"
+	if u.matches > 0 {
+		pos = bold + "résultat " + fmtInt(u.cursor+1) + reset + dim + " / " + fmtInt(u.matches)
 	}
-	b.WriteString(focusMark + "recherche: " + bold + string(u.query) + reset + "_\r\n")
+	b.WriteString(trunc(dim+" "+fmtInt(u.total)+" entrées · "+reset+dim+pos+reset, u.cols-8) + reset + "\r\n")
+	if u.gotoMode {
+		b.WriteString(trunc(titleColor+"aller à l'entrée n° : "+reset+bold+string(u.gotoBuf)+reset+"_"+
+			dim+"  (1 à "+fmtInt(u.matches)+" · Entrée valider · Esc annuler)"+reset, u.cols) + "\r\n")
+	} else {
+		focusMark := ""
+		if !u.detFocus {
+			focusMark = cyan + "▌" + reset
+		}
+		b.WriteString(focusMark + "recherche: " + bold + string(u.query) + reset + "_\r\n")
+	}
 	b.WriteString(strings.Repeat("─", maxi(1, u.cols)) + "\r\n")
 
 	bodyRows := maxi(4, u.rows-4)
 	if u.help {
+		u.listH = bodyRows
 		u.renderHelp(&b, bodyRows)
-		b.WriteString(dim + "↑/↓ défiler · ? ou esc fermer l'aide" + reset)
+		b.WriteString(dim + trunc("↑/↓ PgUp/PgDn défiler · ? ou esc fermer l'aide", u.cols) + reset)
 		fmt.Print(b.String())
 		return
 	}
 
 	// zones : liste (moitié haute) / détail (moitié basse)
-	listRows := (bodyRows - 1) / 2
-	detRows := bodyRows - 1 - listRows
+	u.listH = (bodyRows - 1) / 2
+	u.detH = bodyRows - 1 - u.listH
 
-	u.renderList(&b, listRows)
+	u.renderList(&b, u.listH)
 	b.WriteString(dim + strings.Repeat("┈", maxi(1, u.cols)) + reset + "\r\n")
-	u.renderDetail(&b, detRows)
+	u.renderDetail(&b, u.detH)
 
-	b.WriteString(dim + "↑/↓ naviguer · tab liste/détail · taper pour filtrer · ? aide · esc quitter" + reset)
+	b.WriteString(dim + trunc("↑↓ PgUp PgDn Début Fin naviguer · ^G aller au n° · tab détail · ? aide · esc quitter", u.cols) + reset)
 	fmt.Print(b.String())
 }
 
@@ -254,20 +411,21 @@ func (u *ui) certfrRefs(a model.Advisory) []store.Ref {
 }
 
 func (u *ui) renderList(b *strings.Builder, h int) {
-	if len(u.results) == 0 {
+	if u.matches == 0 {
 		b.WriteString(dim + "  aucun résultat\r\n" + reset)
 		for i := 1; i < h; i++ {
 			b.WriteString("\r\n")
 		}
 		return
 	}
-	start := 0
-	if u.cursor >= h {
-		start = u.cursor - h + 1
-	}
+	u.ensureVisible(h)
 	printed := 0
-	for i := start; i < len(u.results) && printed < h; i++ {
-		a := u.results[i]
+	for i := u.top; i < u.matches && printed < h; i++ {
+		j := i - u.offset
+		if j < 0 || j >= len(u.results) {
+			break
+		}
+		a := u.results[j]
 		id := primaryID(a.ExternalID)
 		if id == "" {
 			id = a.Source
@@ -298,13 +456,13 @@ func (u *ui) renderList(b *strings.Builder, h int) {
 }
 
 func (u *ui) renderDetail(b *strings.Builder, h int) {
-	if len(u.results) == 0 || u.cursor >= len(u.results) {
+	a, ok := u.current()
+	if !ok {
 		for i := 0; i < h; i++ {
 			b.WriteString("\r\n")
 		}
 		return
 	}
-	a := u.results[u.cursor]
 	var lines []string
 	add := func(label, val string) {
 		if strings.TrimSpace(val) == "" {
@@ -312,7 +470,7 @@ func (u *ui) renderDetail(b *strings.Builder, h int) {
 		}
 		lines = append(lines, wrapLines(cyan+label+": "+reset+val, u.cols)...)
 	}
-	lines = append(lines, wrapLines(bold+a.Title+reset, u.cols)...)
+	lines = append(lines, wrapLines(titleColor+a.Title+reset, u.cols)...)
 	lines = append(lines, "")
 	add("ID", a.ExternalID)
 	src := sourceOf(a.Source)

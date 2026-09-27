@@ -102,6 +102,9 @@ Lance `./vulnkb` (ou `./vulnkb tui`).
 | *(taper)*     | filtre les résultats en direct                |
 | `Backspace`   | efface un caractère de la recherche           |
 | `↑` / `↓`     | naviguer dans la liste (ou faire défiler le détail) |
+| `PgUp` / `PgDn` | page précédente / suivante (liste ou détail) |
+| `Début` / `Fin` | premier / dernier résultat                 |
+| `Ctrl-G`      | aller au résultat n° … (taper le numéro, puis `Entrée`) |
 | `Tab`         | basculer le focus entre la liste et le détail |
 | `?`           | aide : légende des couleurs et glossaire (CVE, GHSA, CWE, CVSS…) |
 | `Esc` / `Ctrl-C` | quitter (`Esc` ferme d'abord l'aide)       |
@@ -116,8 +119,9 @@ donne aussi le nom en clair des CWE courantes.
 La recherche porte sur l'identifiant (CVE, GHSA… et leurs alias), le titre, le
 résumé, le composant et le type de faille (CWE pour OSV). Exemples de
 requêtes : `libheif`, `RCE`, `CVE-2026`, `deserialization`, `CWE-79`,
-`golang.org/x/net`. Une recherche vide affiche les entrées les plus
-récentes.
+`golang.org/x/net`. Une recherche vide affiche toutes les entrées, les plus
+récentes en premier. L'en-tête indique la position (« résultat 1 234 /
+30 559 ») ; tous les résultats sont accessibles, pas seulement les premiers.
 
 Commandes en ligne (hors TUI) :
 
