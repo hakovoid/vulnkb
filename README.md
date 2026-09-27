@@ -32,11 +32,11 @@ CGO_ENABLED=1 go build -tags sqlite_fts5 -o vulnkb .   # compile
 | `certfr` | avis et alertes du CERT-FR (ANSSI), **en français** : systèmes affectés, risques, solution, CVE | oui |
 | `nvd` | tous les CVE de la base NVD (NIST) : description, produits et versions (CPE), CWE, score CVSS. Les scores complètent la sévérité des autres sources ; un CVE déjà décrit ailleurs est masqué côté NVD (sauf `src:nvd`) | oui |
 
-`certfr` est incrémentale : la première collecte prend les bulletins révisés
-sur les 365 derniers jours (`VULNKB_CERTFR_DAYS` pour changer la fenêtre), les
-suivantes seulement ce qui a changé depuis. Dans la TUI, une entrée CISA ou
-OSV dont un CVE est couvert par un avis CERT-FR affiche un renvoi vers cet
-avis.
+`certfr` couvre les 3 dernières années par défaut (`VULNKB_CERTFR_DAYS` pour
+la profondeur) ; les synchros suivantes ne récupèrent que les bulletins
+nouveaux ou révisés, et élargir la fenêtre rattrape automatiquement les plus
+anciens. Dans la TUI, une entrée CISA ou OSV dont un CVE est couvert par un
+avis CERT-FR affiche un renvoi vers cet avis.
 
 Les entrées OSV `MAL-*` (paquets malveillants) et les advisories retirés sont
 ignorés ; une même faille publiée sous plusieurs identifiants (GHSA / GO /

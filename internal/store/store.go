@@ -619,6 +619,27 @@ func (s *Store) LastFetched(source string) (time.Time, error) {
 	return fromUnix(n.Int64), nil
 }
 
+// FetchedTimes renvoie, pour une source, la date de collecte de chaque
+// entrée (clé = identifiant interne). Sert aux sources incrémentales à
+// savoir ce qu'elles ont déjà, et si une révision est plus récente.
+func (s *Store) FetchedTimes(source string) (map[string]time.Time, error) {
+	rows, err := s.db.Query(`SELECT id, fetched FROM advisories WHERE source = ?`, source)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]time.Time{}
+	for rows.Next() {
+		var id string
+		var f int64
+		if err := rows.Scan(&id, &f); err != nil {
+			return nil, err
+		}
+		out[id] = fromUnix(f)
+	}
+	return out, rows.Err()
+}
+
 // LastSync renvoie la date de la collecte la plus récente, toutes sources
 // confondues (zéro si la base est vide).
 func (s *Store) LastSync() (time.Time, error) {

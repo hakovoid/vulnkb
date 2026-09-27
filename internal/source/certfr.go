@@ -24,8 +24,11 @@ import (
 
 const certfrBase = "https://www.cert.ssi.gouv.fr"
 
+// certfrDefaultDays est la profondeur d'historique par défaut (3 ans).
+const certfrDefaultDays = 1095
+
 func init() {
-	days := 365
+	days := certfrDefaultDays
 	if v, err := strconv.Atoi(os.Getenv("VULNKB_CERTFR_DAYS")); err == nil && v > 0 {
 		days = v
 	}
@@ -87,13 +90,37 @@ type certfrDetail struct {
 }
 
 // Fetch collecte les bulletins révisés depuis since (moins une marge), ou
-// ceux de la fenêtre configurée lors de la première collecte.
+// ceux de la fenêtre configurée lors de la première collecte. Conservé pour
+// l'interface Source ; le sync passe en réalité par FetchKnown.
 func (c *certfr) Fetch(ctx context.Context, since time.Time) ([]model.Advisory, error) {
 	cutoff := time.Now().AddDate(0, 0, -c.days)
 	if !since.IsZero() {
 		cutoff = since.Add(-48 * time.Hour)
 	}
+	return c.collect(ctx, func(it certfrItem) bool {
+		return !parseCertfrDate(it.LastRevisionDate).Before(cutoff)
+	})
+}
 
+// FetchKnown ne récupère que les bulletins nouveaux ou révisés depuis leur
+// dernière collecte, dans la limite de profondeur configurée. Élargir la
+// fenêtre (VULNKB_CERTFR_DAYS) déclenche donc le rattrapage des bulletins
+// plus anciens à la synchro suivante, sans re-télécharger les autres.
+func (c *certfr) FetchKnown(ctx context.Context, known map[string]time.Time) ([]model.Advisory, error) {
+	cutoff := time.Now().AddDate(0, 0, -c.days)
+	return c.collect(ctx, func(it certfrItem) bool {
+		rev := parseCertfrDate(it.LastRevisionDate)
+		if rev.Before(cutoff) {
+			return false // hors profondeur
+		}
+		prev, seen := known["certfr:"+it.Reference]
+		return !seen || rev.After(prev) // nouveau, ou révisé depuis
+	})
+}
+
+// collect télécharge les listes d'avis et d'alertes, retient les bulletins
+// que keep sélectionne, puis récupère leur détail.
+func (c *certfr) collect(ctx context.Context, keep func(certfrItem) bool) ([]model.Advisory, error) {
 	var items []certfrItem
 	for _, kind := range []string{"avis", "alerte"} {
 		var list []certfrItem
@@ -101,7 +128,7 @@ func (c *certfr) Fetch(ctx context.Context, since time.Time) ([]model.Advisory, 
 			return nil, fmt.Errorf("liste CERT-FR %s: %w", kind, err)
 		}
 		for _, it := range list {
-			if !parseCertfrDate(it.LastRevisionDate).Before(cutoff) {
+			if keep(it) {
 				it.alert = kind == "alerte"
 				items = append(items, it)
 			}

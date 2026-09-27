@@ -119,6 +119,51 @@ func TestCertfrIncremental(t *testing.T) {
 	}
 }
 
+func TestCertfrFetchKnown(t *testing.T) {
+	var hits []string
+	srv := certfrServer(t, &hits)
+	defer srv.Close()
+	c := &certfr{base: srv.URL, client: srv.Client(), days: 365, workers: 2}
+
+	// rien de connu : les deux bulletins récents sont récupérés
+	advs, err := c.FetchKnown(context.Background(), map[string]time.Time{})
+	if err != nil || len(advs) != 2 {
+		t.Fatalf("première collecte: %d (%v)", len(advs), err)
+	}
+
+	// l'avis est déjà à jour (collecté après sa révision), l'alerte est neuve
+	known := map[string]time.Time{
+		"certfr:CERTFR-2026-AVI-0001": time.Now(),
+	}
+	advs, err = c.FetchKnown(context.Background(), known)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(advs) != 1 || advs[0].ID != "certfr:CERTFR-2026-ALE-001" {
+		t.Errorf("seule l'alerte neuve attendue, obtenu %d: %+v", len(advs), advs)
+	}
+
+	// l'avis connu mais révisé depuis (collecté avant sa révision) revient
+	known["certfr:CERTFR-2026-AVI-0001"] = time.Now().AddDate(0, 0, -30)
+	advs, _ = c.FetchKnown(context.Background(), known)
+	ids := map[string]bool{}
+	for _, a := range advs {
+		ids[a.ID] = true
+	}
+	if !ids["certfr:CERTFR-2026-AVI-0001"] {
+		t.Errorf("bulletin révisé non repris: %+v", ids)
+	}
+
+	// profondeur courte : l'ancien avis (3 ans) reste exclu
+	c.days = 30
+	advs, _ = c.FetchKnown(context.Background(), map[string]time.Time{})
+	for _, a := range advs {
+		if a.ID == "certfr:CERTFR-2023-AVI-0999" {
+			t.Error("bulletin hors profondeur récupéré")
+		}
+	}
+}
+
 func TestCertfrTooManyFailures(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/avis/json/" {

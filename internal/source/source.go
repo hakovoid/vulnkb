@@ -48,6 +48,16 @@ func IsIncremental(s Source) bool {
 	return ok && i.Incremental()
 }
 
+// Stateful est implémentée par les sources qui décident quoi collecter à
+// partir de ce qui est déjà en base : le sync leur passe la date de collecte
+// de chaque entrée existante (clé = identifiant interne). Elles ne récupèrent
+// que les entrées nouvelles ou révisées depuis, tout en couvrant la
+// profondeur voulue (rattrapage automatique si l'on élargit la fenêtre).
+type Stateful interface {
+	Source
+	FetchKnown(ctx context.Context, known map[string]time.Time) ([]model.Advisory, error)
+}
+
 // Defaults renvoie les sources collectées par un sync sans argument.
 func Defaults() []Source {
 	var out []Source

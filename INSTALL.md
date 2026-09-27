@@ -73,11 +73,13 @@ Sources disponibles :
   OSV.dev, avec versions affectées, version corrective, CWE et liens.
 - `osv-npm` : **à la demande** (export d'environ 200 Mo), à lancer avec
   `./vulnkb sync osv-npm`.
-- `certfr` : avis et alertes du CERT-FR, en français. Première collecte sur
-  les 365 derniers jours (environ 1 500 bulletins, une dizaine de secondes) ;
-  les suivantes ne reprennent que les bulletins révisés depuis. Pour remonter
-  plus loin, par exemple 5 ans, avant la première collecte :
-  `VULNKB_CERTFR_DAYS=1825 ./vulnkb sync certfr`.
+- `certfr` : avis et alertes du CERT-FR, en français, sur les 3 dernières
+  années par défaut (environ 3 800 bulletins). Les synchros suivantes ne
+  récupèrent que les bulletins nouveaux ou révisés depuis. La profondeur se
+  règle avec `VULNKB_CERTFR_DAYS` (jours) : l'élargir, par exemple
+  `VULNKB_CERTFR_DAYS=1825 ./vulnkb sync certfr` pour 5 ans, déclenche le
+  rattrapage des bulletins plus anciens à la synchro suivante, sans
+  re-télécharger ceux déjà en base.
 - `nvd` : la base NVD (NIST), soit tous les CVE publiés (environ 387 000),
   y compris pour les logiciels hors registres de paquets (vtiger, appliances,
   OS…). Chaque CVE devient une entrée : description, produits et plages de
