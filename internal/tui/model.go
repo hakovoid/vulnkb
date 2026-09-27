@@ -49,6 +49,7 @@ type ui struct {
 	gotoBuf  string
 
 	lastSync time.Time
+	dbSize   int64
 	kev      map[string][]store.Ref // CVE -> entrées CISA KEV
 	certfr   map[string][]store.Ref // CVE -> avis CERT-FR
 
@@ -84,6 +85,7 @@ func newUI(st *store.Store) *ui {
 	m.kev, _ = st.CVEIndex("cisa-kev")
 	m.certfr, _ = st.CVEIndex("certfr")
 	m.lastSync, _ = st.LastSync()
+	m.dbSize, _ = st.DBSize()
 	m.applySearch(runSearch(st, 0, "", store.SortAuto))
 	return m
 }

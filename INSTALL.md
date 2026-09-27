@@ -212,6 +212,7 @@ Commandes en ligne (hors TUI) :
 ./vulnkb sources         # liste les sources enregistrées
 ./vulnkb add <url>       # ajoute un article via Ollama (voir ci-dessous)
 ./vulnkb glossaire       # glossaire : tous les acronymes définis en français
+./vulnkb info            # aperçu : taille de la base, entrées par source
 ./vulnkb tui             # interface de recherche (= ./vulnkb sans argument)
 ```
 

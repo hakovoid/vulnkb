@@ -25,6 +25,7 @@ CGO_ENABLED=1 go build -tags sqlite_fts5 -o vulnkb .   # compile
 ./vulnkb watch add nginx # suit un produit (filtre « mes » dans la recherche)
 ./vulnkb add <url>       # ajoute un article (write-up, blog) via Ollama
 ./vulnkb glossaire       # définitions FR de tous les acronymes
+./vulnkb info            # aperçu : taille de la base, entrées par source
 ./vulnkb                 # lance la TUI de recherche (commande par défaut)
 ```
 

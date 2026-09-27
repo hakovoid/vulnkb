@@ -242,3 +242,12 @@ func TestSortCycle(t *testing.T) {
 		t.Errorf("le cycle ne revient pas au départ: %v", m.sort)
 	}
 }
+
+func TestHumanBytes(t *testing.T) {
+	cases := map[int64]string{512: "512 o", 2048: "2 Ko", 168 << 20: "168 Mo", 1<<30 + (1 << 30 / 10): "1,1 Go"}
+	for n, want := range cases {
+		if got := humanBytes(n); got != want {
+			t.Errorf("humanBytes(%d) = %q, attendu %q", n, got, want)
+		}
+	}
+}

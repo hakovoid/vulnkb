@@ -87,6 +87,20 @@ func fmtInt(n int) string {
 	return string(out)
 }
 
+// humanBytes met en forme une taille : « 1,1 Go », « 168 Mo ».
+func humanBytes(n int64) string {
+	switch {
+	case n >= 1<<30:
+		return strings.Replace(strconv.FormatFloat(float64(n)/(1<<30), 'f', 1, 64), ".", ",", 1) + " Go"
+	case n >= 1<<20:
+		return strconv.FormatInt(n/(1<<20), 10) + " Mo"
+	case n >= 1<<10:
+		return strconv.FormatInt(n/(1<<10), 10) + " Ko"
+	default:
+		return strconv.FormatInt(n, 10) + " o"
+	}
+}
+
 func maxi(a, b int) int { return max(a, b) }
 
 func minInt(a, b int) int { return min(a, b) }

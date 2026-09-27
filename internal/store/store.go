@@ -801,6 +801,37 @@ func (s *Store) Count() (int, error) {
 	return n, err
 }
 
+// DBSize renvoie la taille de la base en octets (pages × taille de page).
+func (s *Store) DBSize() (int64, error) {
+	var pages, pageSize int64
+	if err := s.db.QueryRow(`PRAGMA page_count`).Scan(&pages); err != nil {
+		return 0, err
+	}
+	if err := s.db.QueryRow(`PRAGMA page_size`).Scan(&pageSize); err != nil {
+		return 0, err
+	}
+	return pages * pageSize, nil
+}
+
+// CountsBySource renvoie le nombre d'entrées par source.
+func (s *Store) CountsBySource() (map[string]int, error) {
+	rows, err := s.db.Query(`SELECT source, COUNT(*) FROM advisories GROUP BY source ORDER BY 2 DESC`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]int{}
+	for rows.Next() {
+		var src string
+		var n int
+		if err := rows.Scan(&src, &n); err != nil {
+			return nil, err
+		}
+		out[src] = n
+	}
+	return out, rows.Err()
+}
+
 func scan(rows *sql.Rows) ([]model.Advisory, error) {
 	var out []model.Advisory
 	for rows.Next() {

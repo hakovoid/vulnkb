@@ -121,7 +121,8 @@ func (m *ui) headerView(w int) string {
 	case age > 36*time.Hour:
 		dot = pal.yellow
 	}
-	right := lipgloss.NewStyle().Foreground(lipgloss.Color(dot)).Render("●") + " " +
+	right := sty.muted.Render(humanBytes(m.dbSize)) + sty.faint.Render("  ·  ") +
+		lipgloss.NewStyle().Foreground(lipgloss.Color(dot)).Render("●") + " " +
 		sty.muted.Render("sync "+syncAge(m.lastSync, time.Now()))
 
 	gap := w - visibleLen(left) - visibleLen(right)

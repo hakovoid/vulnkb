@@ -60,6 +60,8 @@ func run() error {
 	case "glossaire", "glossary", "glossaire.md":
 		printGlossary()
 		return nil
+	case "info", "stats":
+		return info(st)
 	case "sources":
 		for _, s := range source.All() {
 			if source.IsOptional(s) {
@@ -76,7 +78,7 @@ func run() error {
 	case "tui":
 		return tui.Run(st)
 	default:
-		return fmt.Errorf("commande inconnue %q (sync | sources | add | watch | glossaire | tui)", cmd)
+		return fmt.Errorf("commande inconnue %q (sync | sources | add | watch | info | glossaire | tui)", cmd)
 	}
 }
 
@@ -144,6 +146,62 @@ func writeWatchlist(path string, terms []string) error {
 		body += t + "\n"
 	}
 	return os.WriteFile(path, []byte(body), 0o644)
+}
+
+// info affiche un aperçu de la base : taille, entrées par source, exploits,
+// dernière collecte.
+func info(st *store.Store) error {
+	size, _ := st.DBSize()
+	total, _ := st.Count()
+	shown, _ := st.CountMatches("")
+	bySrc, _ := st.CountsBySource()
+	nvd, _ := st.CountNVD()
+	expl, _ := st.CountExploits()
+	last, _ := st.LastSync()
+
+	fmt.Printf("Base   %s   (%s)\n", humanBytesCLI(size), dbPath())
+	fmt.Printf("       %s entrées, dont %s affichées par défaut\n", groupInt(total), groupInt(shown))
+	fmt.Println("\nEntrées par source :")
+	for _, name := range []string{"nvd", "osv", "certfr", "cisa-kev", "article-ia"} {
+		if n := bySrc[name]; n > 0 {
+			fmt.Printf("  %-12s %s\n", name, groupInt(n))
+		}
+	}
+	fmt.Printf("\nScores CVSS (NVD) : %s\n", groupInt(nvd))
+	fmt.Printf("Exploits publics  : %s références\n", groupInt(expl))
+	if last.IsZero() {
+		fmt.Println("\nJamais synchronisé — lance : vulnkb sync")
+	} else {
+		fmt.Printf("\nDernière collecte : %s\n", last.Local().Format("2006-01-02 15:04"))
+	}
+	return nil
+}
+
+// humanBytesCLI met en forme une taille pour la ligne de commande.
+func humanBytesCLI(n int64) string {
+	switch {
+	case n >= 1<<30:
+		return fmt.Sprintf("%.1f Go", float64(n)/(1<<30))
+	case n >= 1<<20:
+		return fmt.Sprintf("%d Mo", n/(1<<20))
+	case n >= 1<<10:
+		return fmt.Sprintf("%d Ko", n/(1<<10))
+	default:
+		return fmt.Sprintf("%d o", n)
+	}
+}
+
+// groupInt sépare les milliers par une espace fine.
+func groupInt(n int) string {
+	s := strconv.Itoa(n)
+	var b strings.Builder
+	for i, c := range s {
+		if i > 0 && (len(s)-i)%3 == 0 {
+			b.WriteByte(' ')
+		}
+		b.WriteRune(c)
+	}
+	return b.String()
 }
 
 // printGlossary affiche le glossaire complet des acronymes et notions.
