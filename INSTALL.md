@@ -304,6 +304,7 @@ Commandes en ligne (hors TUI) :
 ./vulnkb glossaire       # glossaire : tous les acronymes définis en français
 ./vulnkb info            # aperçu : taille de la base, entrées par source
 ./vulnkb stats           # statistiques détaillées + exposition par produit (Alt-I)
+./vulnkb scan ~/projet   # failles des dépendances installées d'un projet (code 2 si grave)
 ./vulnkb tui             # interface de recherche (= ./vulnkb sans argument)
 ```
 

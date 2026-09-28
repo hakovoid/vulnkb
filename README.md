@@ -66,6 +66,9 @@ service en ligne une fois la collecte faite.
   `composer.json` + `composer.lock`, `Cargo.toml` + `Cargo.lock`,
   `docker-compose`.
 - Exposition par produit dans les statistiques.
+- Analyse d'un projet sans rien configurer (`vulnkb scan ~/projet`) : failles
+  qui touchent les versions installées, version à viser, code de sortie pour
+  un hook git ou l'intégration continue.
 
 **Interface terminal**
 - Deux panneaux, liste et fiche, redimensionnables au clavier ou à la souris.
@@ -99,6 +102,7 @@ service en ligne une fois la collecte faite.
 - [Rechercher](#rechercher) — syntaxe, filtres, tris, exemples
 - [L'interface (TUI)](#linterface-tui) — raccourcis clavier
 - [Suivre tes produits (filtre `mes`)](#suivre-tes-produits-filtre-mes)
+- [Analyser un projet (`vulnkb scan`)](#analyser-un-projet-vulnkb-scan)
 - [Statistiques](#statistiques)
 - [Exporter en HTML](#exporter-en-html)
 - [Ajouter un article ou un texte](#ajouter-un-article-ou-un-texte)
@@ -347,6 +351,50 @@ version.
 Si tes projets utilisent npm, lance aussi `vulnkb sync osv-npm`, qui n'est pas
 dans le sync par défaut.
 
+## Analyser un projet (`vulnkb scan`)
+
+`vulnkb scan` lit les fichiers de dépendances d'un ou plusieurs dossiers et
+liste les failles qui touchent **les versions réellement installées**, sans
+passer par la liste de surveillance ni la modifier.
+
+```sh
+vulnkb scan                          # le dossier courant
+vulnkb scan ~/kuro_apps/koai ~/kuro_apps/plekta
+vulnkb scan -min high ~/kuro_apps    # seulement les failles élevées ou critiques
+vulnkb scan -v ~/projet              # toutes les failles de chaque dépendance
+vulnkb scan -html ~/projet           # et un rapport HTML des failles trouvées
+vulnkb scan -dev -indirect ~/projet  # avec les dépendances de dev et Go indirectes
+```
+
+Exemple de sortie :
+
+```text
+backend/requirements.txt
+  ✗ pypi python-multipart 0.0.9 — 8 failles (4 élevées, 1 moyenne, 3 faibles) · exploit public
+      ↑ mettre à jour en 0.0.31 ou plus
+        élevée   CVE-2026-24486   Python-Multipart has Arbitrary File Write…  corrigé en 0.0.22
+        …
+  ✓ 7 dépendances sans faille connue
+  ? 2 sans version certaine, non vérifiées : uvicorn, httpx
+
+docker-compose.yml
+  · 1 image Docker non vérifiées : redis
+
+Bilan : 1 dépendance vulnérable sur 8 vérifiées · 8 failles (4 élevées, 1 moyenne, 3 faibles)
+```
+
+- **Vérifié** : les dépendances dont la version est certaine (fichier de
+  verrouillage, `go.mod`, `==`). « Mettre à jour en … » est la plus haute des
+  versions correctives : elle corrige toutes les failles listées.
+- **Non vérifié** (listé à part) : les dépendances sans version certaine
+  (`^1.2` sans fichier de verrouillage) et les images Docker.
+- **Code de sortie** : 0 si rien n'atteint le seuil `-fail` (défaut `high`),
+  2 sinon, 1 en cas d'erreur. Pour bloquer un commit, dans
+  `.git/hooks/pre-commit` : `vulnkb scan -min high .`. `-fail none` ne fait
+  jamais échouer.
+- Les failles npm demandent `vulnkb sync osv-npm` : scan le signale s'il n'y
+  en a pas en base.
+
 ## Statistiques
 
 `Alt-I` dans l'interface, ou `vulnkb stats` :
@@ -494,6 +542,7 @@ L'en-tête de l'interface indique l'âge du dernier sync (« ● sync il y a 4 h
 | `vulnkb sources` | sources : contenu, entrées, dernière collecte |
 | `vulnkb watch [add\|rm\|import] …` | gérer la liste de surveillance (filtre `mes`) |
 | `vulnkb add [-y] [-url U] [-model M] <url\|fichier\|->` | ajouter un article ou un texte via Ollama |
+| `vulnkb scan [-v] [-min S] [-fail S] [-html] [dossiers…]` | failles qui touchent les dépendances installées d'un projet |
 | `vulnkb export [-tri T] [-max N] [-o F] <recherche…>` | rapport HTML d'une recherche |
 | `vulnkb stats` | statistiques et exposition de tes produits |
 | `vulnkb info` | aperçu : taille de la base, entrées par source, date EPSS |
@@ -548,7 +597,8 @@ internal/versions/  comparaison de versions (semver, PEP 440…) et plages vuln�
 internal/extract/   article ou texte → fiche via Ollama (commande add)
 internal/glossary/  glossaire des acronymes (aide et commande glossaire)
 internal/tui/       interface Bubble Tea + Lipgloss, statistiques, export HTML
-main.go, watch.go   CLI
+main.go, watch.go,
+scan.go             CLI
 ```
 
 ## Ajouter une source perso

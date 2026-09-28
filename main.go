@@ -37,6 +37,9 @@ import (
 
 func main() {
 	if err := run(); err != nil {
+		if errors.Is(err, errFindings) {
+			os.Exit(2) // vulnkb scan : failles au-dessus du seuil
+		}
 		fmt.Fprintln(os.Stderr, "erreur:", err)
 		os.Exit(1)
 	}
@@ -74,6 +77,8 @@ func run() error {
 		return nil
 	case "export":
 		return exportCmd(st, args)
+	case "scan":
+		return scanCmd(st, args)
 	case "theme", "theme:":
 		return themeCmd(st, args)
 	case "sources":
@@ -86,7 +91,7 @@ func run() error {
 	case "tui":
 		return tui.Run(st)
 	default:
-		return fmt.Errorf("commande inconnue %q (sync | sources | add | watch | export | info | stats | theme | glossaire | tui)", cmd)
+		return fmt.Errorf("commande inconnue %q (sync | sources | add | watch | scan | export | info | stats | theme | glossaire | tui)", cmd)
 	}
 }
 

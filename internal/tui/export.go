@@ -67,6 +67,19 @@ func ExportAdvisory(st *store.Store, a model.Advisory, path string) (string, err
 	return path, writeExport(st, path, []model.Advisory{a}, reportMeta{Title: primaryID(a.ExternalID), Total: 1})
 }
 
+// ExportList écrit un rapport HTML des fiches données, dans cet ordre (ex.
+// les failles trouvées par vulnkb scan). path vide : fichier nommé d'après
+// le titre dans le dossier des exports.
+func ExportList(st *store.Store, advs []model.Advisory, title, path string) (string, error) {
+	if len(advs) > exportMax {
+		advs = advs[:exportMax]
+	}
+	if path == "" {
+		path = exportPath(title)
+	}
+	return path, writeExport(st, path, advs, reportMeta{Title: title, Total: len(advs)})
+}
+
 var slugRe = regexp.MustCompile(`[^a-z0-9]+`)
 
 func exportPath(name string) string {

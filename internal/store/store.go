@@ -542,10 +542,22 @@ func (s *Store) SearchPage(query string, offset, limit int) ([]model.Advisory, e
 // peut mêler texte et filtres (voir Query). L'ordre est stable d'une page à
 // l'autre.
 func (s *Store) SearchPageSorted(query string, sort Sort, offset, limit int) ([]model.Advisory, error) {
+	return s.searchPage(s.resolveEUVD(ParseQuery(query)), sort, offset, limit)
+}
+
+// SearchWithWatch est SearchPageSorted avec une liste de surveillance donnée
+// (au lieu de la liste courante), pour le filtre « mes » : sert à l'analyse
+// d'un projet (vulnkb scan) sans toucher à la liste de l'utilisateur.
+func (s *Store) SearchWithWatch(terms []string, query string, sort Sort, limit int) ([]model.Advisory, error) {
+	q := s.resolveEUVD(ParseQuery(query))
+	q.WatchReq, q.Watch = true, terms
+	return s.searchPage(q, sort, 0, limit)
+}
+
+func (s *Store) searchPage(q Query, sort Sort, offset, limit int) ([]model.Advisory, error) {
 	if limit <= 0 {
 		limit = 50
 	}
-	q := s.resolveEUVD(ParseQuery(query))
 	if q.Impossible() {
 		return nil, nil
 	}

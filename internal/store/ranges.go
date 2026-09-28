@@ -101,6 +101,12 @@ type VersionHit struct {
 // WatchedVersionsHit renvoie, pour une entrée, les versions de la liste de
 // surveillance qu'elle touche (termes qualifiés avec version seulement).
 func (s *Store) WatchedVersionsHit(id string) ([]VersionHit, error) {
+	return s.VersionHits(id, Watchlist())
+}
+
+// VersionHits renvoie les versions des termes donnés (qualifiés avec
+// version) que l'entrée id touche.
+func (s *Store) VersionHits(id string, terms []string) ([]VersionHit, error) {
 	// les plages de l'entrée d'abord (quelques lignes), comparées ensuite à
 	// la liste en mémoire
 	rows, err := s.db.Query(`SELECT eco, pkg, IFNULL(introduced, ''), IFNULL(fixed, ''), IFNULL(last_affected, '')
@@ -122,7 +128,7 @@ FROM advisory_ranges WHERE id = ?`, id)
 		return nil, err
 	}
 	var out []VersionHit
-	for _, raw := range Watchlist() {
+	for _, raw := range terms {
 		t := ParseWatchTerm(raw)
 		if t.Versions == "" {
 			continue
@@ -137,4 +143,12 @@ FROM advisory_ranges WHERE id = ?`, id)
 		}
 	}
 	return out, nil
+}
+
+// HasEcosystem dit si la base contient des fiches d'un écosystème (« npm »,
+// « pypi »…) : sans elles, l'analyse d'un projet ne peut rien trouver.
+func (s *Store) HasEcosystem(label string) bool {
+	var ok bool
+	s.db.QueryRow(`SELECT EXISTS (SELECT 1 FROM advisory_ranges WHERE eco = ?)`, strings.ToLower(label)).Scan(&ok)
+	return ok
 }
