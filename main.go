@@ -22,6 +22,7 @@ import (
 	"strings"
 	"time"
 
+	"vulnkb/internal/cvelist"
 	"vulnkb/internal/epss"
 	"vulnkb/internal/exploits"
 	"vulnkb/internal/extract"
@@ -360,12 +361,14 @@ func envOr(key, def string) string {
 func sync(st *store.Store, names []string) error {
 	var srcs []source.Source
 	all := len(names) == 0
-	withNVD, withExploits, withEPSS := all, all, all
+	withNVD, withCVEList, withExploits, withEPSS := all, all, all, all
 	if !all {
 		for _, n := range names {
 			switch n {
 			case "nvd":
 				withNVD = true
+			case "cvelist", "vulnrichment":
+				withCVEList = true
 			case "exploits", "exploit":
 				withExploits = true
 			case "epss":
@@ -415,6 +418,9 @@ func sync(st *store.Store, names []string) error {
 	}
 	if withNVD {
 		syncNVD(st)
+	}
+	if withCVEList {
+		syncCVEList(st)
 	}
 	if withExploits {
 		syncExploits(st)
@@ -473,6 +479,79 @@ func syncExploits(st *store.Store) {
 	}
 	total, _ := st.CountExploits()
 	fmt.Printf("%d références en %s\n", total, time.Since(start).Round(time.Second))
+}
+
+// cvelistDayKey retient le jour (UTC) jusqu'où la liste officielle des CVE a
+// été intégrée : la synchro suivante reprend les deltas quotidiens à partir
+// de ce jour.
+const cvelistDayKey = "cvelist_day"
+
+// syncCVEList intègre la liste officielle des CVE (CVE List V5, avec
+// l'enrichissement Vulnrichment de la CISA) : l'export complet la première
+// fois ou après 30 jours sans synchro, sinon les deltas de chaque jour.
+func syncCVEList(st *store.Store) {
+	fmt.Print("→ cvelist (liste officielle des CVE, Vulnrichment)… ")
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Minute)
+	defer cancel()
+	start := time.Now()
+	client := &http.Client{}
+	wanted, err := st.CVEListFilter()
+	if err != nil {
+		fmt.Printf("échec : %v\n", err)
+		return
+	}
+
+	var batch []cvelist.Record
+	seen, kept := 0, 0
+	flush := func() error {
+		n, err := st.UpsertCVEList(batch, wanted)
+		kept += n
+		batch = batch[:0]
+		return err
+	}
+	emit := func(r cvelist.Record) error {
+		seen++
+		batch = append(batch, r)
+		if len(batch) >= 5000 {
+			return flush()
+		}
+		return nil
+	}
+
+	latest, err := cvelist.Latest(ctx, client)
+	if err != nil {
+		fmt.Printf("échec : %v\n", err)
+		return
+	}
+	last, _ := st.Meta(cvelistDayKey)
+	day, perr := time.Parse("2006-01-02", last)
+	today, _ := time.Parse("2006-01-02", latest.Day)
+	if perr != nil || today.Sub(day) > 30*24*time.Hour || os.Getenv("VULNKB_CVELIST_FULL") != "" {
+		fmt.Print("export complet (~600 Mo)… ")
+		err = cvelist.FetchFull(ctx, client, latest.Full, emit)
+	} else {
+		// chaque journée depuis la dernière synchro, puis aujourd'hui
+		for d := day; d.Before(today) && err == nil; d = d.AddDate(0, 0, 1) {
+			err = cvelist.FetchDelta(ctx, client, cvelist.EndOfDayURL(d.Format("2006-01-02")), emit)
+			if errors.Is(err, cvelist.ErrNotFound) {
+				err = fmt.Errorf("delta du %s pas encore publié", d.Format("2006-01-02"))
+			}
+		}
+	}
+	if err == nil && latest.Delta != "" {
+		err = cvelist.FetchDelta(ctx, client, latest.Delta, emit)
+	}
+	if err == nil {
+		err = flush()
+	}
+	if err != nil {
+		fmt.Printf("échec : %v\n", err)
+		return
+	}
+	st.SetMeta(cvelistDayKey, latest.Day)
+	records, ssvc, _ := st.CountCVEList()
+	fmt.Printf("%s fiches lues, %s utiles en %s ; %s CVE complétés, %s évaluations SSVC\n",
+		groupInt(seen), groupInt(kept), time.Since(start).Round(time.Second), groupInt(records), groupInt(ssvc))
 }
 
 // nvdSyncedKey date la dernière synchro NVD complète ou incrémentale. Son nom

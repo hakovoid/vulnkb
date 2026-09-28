@@ -17,7 +17,7 @@ retrouver une info en quelques frappes.
   - Fedora : `sudo dnf install gcc`
 - **Accès réseau** vers GitHub (dépendances) et vers les sources de données
   (`cisa.gov`, `osv-vulnerabilities.storage.googleapis.com`,
-  `www.cert.ssi.gouv.fr` et `nvd.nist.gov`).
+  `www.cert.ssi.gouv.fr`, `nvd.nist.gov`, `api.github.com` et `github.com`).
 
 ---
 
@@ -106,9 +106,23 @@ Sources disponibles :
   10 %, et la liste se trie par EPSS (`Alt-O`, colonne dédiée) ou se filtre
   (`epss:10`). Combinaison utile : `mes epss:10`.
 
-Ordre de grandeur : un premier `sync` complet prend environ 2 minutes sur une
-bonne connexion, pour environ 410 000 entrées (dont 384 000 affichées) et une
-base d'environ 1 Go, dont 800 Mo pour NVD.
+- `cvelist` : la liste officielle des CVE (CVE List V5), avec
+  l'enrichissement de la CISA (Vulnrichment). NVD met des semaines, parfois
+  des mois, à analyser un nouveau CVE : en attendant, sa fiche n'a ni produit
+  ni version, et le filtre `mes` ne la voit pas. Cette source comble ces
+  trous avec ce que l'émetteur du CVE a déclaré : titre, produits, versions
+  touchées et corrigées, CWE, score. Rien n'est créé en double et ce que NVD
+  fournit reste prioritaire. Elle ajoute aussi l'évaluation SSVC de la CISA
+  (ligne « Éval. CISA » : exploitation constatée ou preuve de concept
+  publique, automatisable, impact), qui alimente le filtre `exploit`. La
+  première synchro télécharge l'export complet (~600 Mo, environ 45 s) ; les
+  suivantes, les deltas quotidiens (quelques secondes). Au-delà de 30 jours
+  sans synchro, ou avec `VULNKB_CVELIST_FULL=1`, l'export complet est
+  repris.
+
+Ordre de grandeur : un premier `sync` complet prend environ 3 minutes sur une
+bonne connexion, pour environ 420 000 entrées (dont 388 000 affichées) et une
+base d'environ 1,2 Go, dont 800 Mo pour NVD.
 
 `sync` affiche le nombre d'entrées récupérées par source et le total en base.
 À relancer quand tu veux rafraîchir (l'insertion est idempotente : pas de
@@ -201,7 +215,7 @@ Des filtres se combinent au texte :
 | `sev:high+` | cette sévérité ou plus grave |
 | `src:kev` | une source (`kev`, `osv`, `fr`, `nvd`, `ia`) ; `src:kev,fr` pour plusieurs |
 | `exploitee` | failles exploitées activement : CVE présent dans CISA KEV, toutes sources confondues |
-| `exploit` | un exploit ou une preuve de concept public existe (Exploit-DB, Metasploit, GitHub) |
+| `exploit` | un exploit ou une preuve de concept public existe (Exploit-DB, Metasploit, GitHub, ou évaluation SSVC de la CISA) |
 | `epss:10` | probabilité d'exploitation EPSS d'au moins 10 % (`epss:1`, `epss:50`…) |
 | `mes` | seulement les produits de ta liste de surveillance (voir ci-dessous) |
 

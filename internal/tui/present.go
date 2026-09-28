@@ -5,6 +5,7 @@ import (
 	"regexp"
 	"strings"
 
+	"vulnkb/internal/cvelist"
 	"vulnkb/internal/model"
 	"vulnkb/internal/store"
 )
@@ -138,6 +139,36 @@ func epssColor(p float64) string {
 func describeEPSS(p, pct float64) string {
 	return bold + epssColor(p) + fmtPct(p) + reset + dim + " de probabilité d'exploitation sous 30 jours · plus menaçant que " +
 		fmtPctile(pct) + " des CVE" + reset
+}
+
+// describeSSVC résume l'évaluation SSVC de la CISA : exploitation constatée,
+// automatisable, impact technique. "" si absente.
+func describeSSVC(v cvelist.SSVC) string {
+	var expl string
+	switch v.Exploitation {
+	case "active":
+		expl = boldRed + "exploitation constatée" + reset
+	case "poc":
+		expl = magenta + "preuve de concept publique" + reset
+	case "none":
+		expl = "pas d'exploitation connue"
+	default:
+		return ""
+	}
+	parts := []string{expl}
+	switch v.Automatable {
+	case "yes":
+		parts = append(parts, orange+"automatisable"+reset)
+	case "no":
+		parts = append(parts, "non automatisable")
+	}
+	switch v.Impact {
+	case "total":
+		parts = append(parts, "impact total")
+	case "partial":
+		parts = append(parts, "impact partiel")
+	}
+	return strings.Join(parts, dim+" · "+reset)
 }
 
 // exploitKinds nomme les origines d'exploit dans la fiche.

@@ -14,6 +14,7 @@ import (
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 
+	"vulnkb/internal/cvelist"
 	"vulnkb/internal/model"
 	"vulnkb/internal/store"
 )
@@ -239,6 +240,13 @@ func (m *ui) exploitsFor(a model.Advisory) []model.ExploitRef {
 	}
 	ex, _ := m.st.ExploitsFor(cves)
 	return ex
+}
+
+// ssvcFor renvoie l'évaluation SSVC de la CISA la plus grave parmi les CVE
+// de l'entrée.
+func (m *ui) ssvcFor(a model.Advisory) cvelist.SSVC {
+	v, _ := m.st.SSVCFor(store.CVEs(a.ExternalID))
+	return v
 }
 
 // certfrRefs renvoie les avis CERT-FR qui citent un CVE de l'entrée.

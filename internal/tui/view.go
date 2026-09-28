@@ -325,10 +325,13 @@ func (m *ui) detailPanel(w, h int) string {
 // avec le lien le plus utile. Vide si rien d'actionnable n'est connu.
 func (m *ui) actionLines(a model.Advisory, w int) []string {
 	var body []string
+	ssvc := m.ssvcFor(a)
 	switch {
 	case m.exploited(a):
 		body = append(body, boldRed+"⚠ exploitée activement — à corriger en priorité"+reset)
-	case len(m.exploitsFor(a)) > 0:
+	case ssvc.Exploitation == "active":
+		body = append(body, boldRed+"⚠ exploitation constatée par la CISA — à corriger en priorité"+reset)
+	case len(m.exploitsFor(a)) > 0 || ssvc.Exploitation == "poc":
 		body = append(body, magenta+"⚑ exploit public disponible — à traiter en priorité"+reset)
 	case a.EPSS >= 0.1:
 		body = append(body, orange+"⚑ forte probabilité d'exploitation (EPSS "+fmtPct(a.EPSS)+") — à traiter en priorité"+reset)
@@ -400,6 +403,7 @@ func (m *ui) detailLines(a model.Advisory, w int) []string {
 	if a.EPSS > 0 {
 		kv("EPSS", describeEPSS(a.EPSS, a.EPSSPercentile))
 	}
+	kv("Éval. CISA", describeSSVC(m.ssvcFor(a)))
 	kv("Composant", a.Component)
 	if a.VulnType == "" && a.NVD.CWE != "" {
 		kv("Type", describeCWEs(a.NVD.CWE)+dim+" (NVD)"+reset)

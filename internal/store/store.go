@@ -152,9 +152,13 @@ UPDATE advisories SET exploited = 0 WHERE exploited = 1 AND id NOT IN (` + kevLi
 	return err
 }
 
-// hasExploitLinked liste les entrées dont un CVE dispose d'un exploit public.
+// hasExploitLinked liste les entrées dont un CVE dispose d'un exploit public :
+// référencé (Exploit-DB, Metasploit, GitHub), ou signalé par l'évaluation
+// SSVC de la CISA (preuve de concept publique ou exploitation constatée).
 const hasExploitLinked = `SELECT c.id FROM advisory_cves c
-    JOIN exploit_refs e ON e.cve = c.cve`
+    JOIN exploit_refs e ON e.cve = c.cve
+UNION SELECT c.id FROM advisory_cves c
+    JOIN ssvc v ON v.cve = c.cve AND v.exploitation IN ('poc', 'active')`
 
 // RefreshHasExploit met à jour le marqueur « exploit public disponible ».
 func (s *Store) RefreshHasExploit() error {
@@ -167,7 +171,7 @@ UPDATE advisories SET has_exploit = 0 WHERE has_exploit = 1 AND id NOT IN (` + h
 // RefreshDerived recalcule tout ce qui dépend de plusieurs sources à la fois ;
 // à appeler en fin de synchro.
 func (s *Store) RefreshDerived() error {
-	for _, f := range []func() error{s.RefreshLevels, s.RefreshShadowed, s.RefreshExploited, s.RefreshHasExploit} {
+	for _, f := range []func() error{s.ApplyCVEList, s.RefreshLevels, s.RefreshShadowed, s.RefreshExploited, s.RefreshHasExploit} {
 		if err := f(); err != nil {
 			return err
 		}
@@ -220,7 +224,7 @@ END;
 // migrate crée le schéma, ou fait évoluer une base créée par une version
 // antérieure. La table FTS5 est tenue à jour par des triggers.
 func (s *Store) migrate() error {
-	if _, err := s.db.Exec(tableSchema); err != nil {
+	if _, err := s.db.Exec(tableSchema + cvelistSchema); err != nil {
 		return fmt.Errorf("migration: %w", err)
 	}
 	if _, err := s.addColumnIfMissing("advisories", "remediation", "TEXT"); err != nil {
