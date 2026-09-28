@@ -7,7 +7,7 @@
 Base de connaissances de sécurité, **en local et en français**, consultable au
 clavier dans le terminal. vulnkb collecte les vulnérabilités publiées par les
 sources publiques (CISA KEV, OSV, CERT-FR, NVD, liste officielle des CVE,
-exploits publics, EPSS), les
+base européenne EUVD, exploits publics, EPSS), les
 normalise dans un format commun, les stocke dans SQLite avec recherche
 plein-texte (FTS5), et te permet de répondre en quelques frappes à des
 questions comme :
@@ -22,10 +22,11 @@ service en ligne une fois la collecte faite.
 ## Fonctionnalités
 
 **Collecte**
-- 8 sources publiques : CISA KEV, OSV.dev (Go, PyPI, npm, Packagist, crates.io,
+- 9 sources publiques : CISA KEV, OSV.dev (Go, PyPI, npm, Packagist, crates.io,
   Maven), CERT-FR en français, NVD (tous les CVE), la liste officielle des CVE
-  avec l'enrichissement de la CISA (Vulnrichment), les exploits publics
-  (Exploit-DB, Metasploit, PoC-in-GitHub) et les scores EPSS.
+  avec l'enrichissement de la CISA (Vulnrichment), la base européenne EUVD de
+  l'ENISA, les exploits publics (Exploit-DB, Metasploit, PoC-in-GitHub) et les
+  scores EPSS.
 - CVE récents complétés dès leur publication : produits, versions, CWE et
   score de l'émetteur, sans attendre l'analyse de NVD, qui peut prendre des
   mois. En 2026, 90 % des CVE sans produit dans NVD en ont un grâce à cette
@@ -173,7 +174,7 @@ Ils se combinent entre eux et avec le texte. Les filtres reconnus s'affichent
 | `sev:crit,high` | plusieurs sévérités |
 | `sev:high+` | cette sévérité **ou plus grave** |
 | `src:kev` | une source : `kev`, `osv`, `fr` (CERT-FR), `nvd`, `ia` (articles ajoutés) ; `src:kev,fr` pour plusieurs |
-| `exploitee` | faille **exploitée activement** (CVE au catalogue CISA KEV) — priorité absolue |
+| `exploitee` | faille **exploitée activement** (CVE au catalogue CISA KEV ou dans la liste des exploitées de l'ENISA) — priorité absolue |
 | `exploit` | un **exploit ou une preuve de concept public** existe : référencé (Exploit-DB, Metasploit, GitHub) ou signalé par l'évaluation SSVC de la CISA |
 | `epss:10` | probabilité d'exploitation EPSS **d'au moins 10 %** dans les 30 jours (`epss:1`, `epss:50`…) |
 | `mes` | seulement **tes produits** (liste de surveillance, voir plus bas) |
@@ -211,6 +212,7 @@ mes exploit                   tes produits pour lesquels un exploit circule
 ```text
 exploitee                     tout le catalogue KEV (≈ 2 500 failles exploitées)
 exploitee src:fr              les failles exploitées qui ont un avis CERT-FR, en français
+EUVD-2026-72027               une faille citée par un bulletin européen
 epss:50                       les failles jugées les plus menacées
 exploit sev:crit              critiques avec exploit public
 exploitee exploit             exploitées ET avec exploit public
@@ -424,6 +426,7 @@ qu'elle est à relire. Tu la retrouves avec `src:ia`.
 | `nvd` | tous les CVE de la base NVD (NIST) : description, produits et versions (CPE), CWE, score CVSS. Les scores complètent la sévérité des autres sources ; un CVE déjà décrit ailleurs est masqué côté NVD (sauf `src:nvd`) | oui |
 | `exploits` | exploits et PoC publics par CVE (Exploit-DB, Metasploit, GitHub), en métadonnées seulement : marqueur et filtre `exploit`, liens dans la fiche | oui |
 | `epss` | probabilité EPSS (FIRST) qu'un CVE soit exploité dans les 30 jours, mise à jour chaque jour : ligne dans la fiche, filtre `epss:10`, tri par EPSS | oui |
+| `euvd` | base européenne des vulnérabilités (ENISA) : liste des failles exploitées selon l'ENISA (filtre `exploitee`), identifiants EUVD (cherchables : `EUVD-2026-72027`, lien vers la fiche ENISA) | oui |
 | `cvelist` | liste officielle des CVE (CVE List V5) et enrichissement de la CISA (Vulnrichment) : complète les fiches NVD pas encore analysées (titre, produits, versions, CWE, score) et ajoute l'évaluation SSVC (ligne « Éval. CISA », filtre `exploit`) | oui |
 
 `cvelist` télécharge l'export complet (~600 Mo, environ 45 s) la première
@@ -431,6 +434,12 @@ fois, puis seulement les deltas quotidiens (quelques secondes). Il ne crée pas
 de fiches en double : il comble les trous des fiches NVD, et ce que NVD
 fournit après son analyse reste prioritaire. Seuls les CVE incomplets côté
 NVD sont gardés (~117 000, ~150 Mo de base en plus).
+
+`euvd` récupère à chaque synchro la liste complète des failles exploitées
+selon l'ENISA, et les identifiants EUVD des fiches mises à jour depuis la
+synchro précédente (7 jours la première fois ; `VULNKB_EUVD_DAYS=90` pour
+remonter plus loin). Le service ne rend que 100 fiches par requête et limite
+le débit : vulnkb espace ses requêtes et patiente quand il est freiné.
 
 `certfr` couvre les 3 dernières années par défaut. `VULNKB_CERTFR_DAYS` règle
 cette profondeur. Les synchros suivantes ne récupèrent que les bulletins
@@ -502,6 +511,7 @@ L'en-tête de l'interface indique l'âge du dernier sync (« ● sync il y a 4 h
 | `VULNKB_EXPORT_DIR` | dossier des exports HTML (défaut `~/vulnkb-exports`) |
 | `VULNKB_CERTFR_DAYS` | profondeur de collecte CERT-FR en jours (défaut 3 ans) |
 | `VULNKB_NVD_FULL` | `1` : re-télécharger tous les flux NVD |
+| `VULNKB_EUVD_DAYS` | profondeur de collecte des identifiants EUVD en jours (défaut 7 la première fois, puis depuis la dernière synchro) |
 | `VULNKB_CVELIST_FULL` | `1` : re-télécharger l'export complet de la liste des CVE |
 | `VULNKB_MODEL` | modèle Ollama pour `add` (défaut `qwen2.5-coder:7b`) |
 | `OLLAMA_HOST` | adresse d'Ollama (défaut `http://localhost:11434`) |
@@ -517,7 +527,7 @@ L'en-tête de l'interface indique l'âge du dernier sync (« ● sync il y a 4 h
 > Note réseau : la collecte contacte `cisa.gov`,
 > `osv-vulnerabilities.storage.googleapis.com`, `www.cert.ssi.gouv.fr`,
 > `nvd.nist.gov`, `epss.empiricalsecurity.com`, `api.github.com` et
-> `github.com` (liste des CVE), `gitlab.com`,
+> `github.com` (liste des CVE), `euvdservices.enisa.europa.eu`, `gitlab.com`,
 > `raw.githubusercontent.com` et `codeload.github.com` (exploits), et
 > `go mod tidy` récupère les modules. Si ton réseau filtre les sorties, autorise
 > ces domaines, ou utilise `GOPROXY=direct` pour les dépendances.
@@ -530,6 +540,7 @@ internal/store/     SQLite + index FTS5 : upsert, recherche, filtres, tris, stat
 internal/source/    interface Source + registre ; une source = un fichier
 internal/nvd/       scores et fiches NVD
 internal/cvelist/   liste officielle des CVE (CVE List V5) et Vulnrichment de la CISA
+internal/euvd/      base européenne des vulnérabilités (ENISA)
 internal/exploits/  références d'exploits publics (Exploit-DB, Metasploit, GitHub)
 internal/epss/      scores EPSS (FIRST)
 internal/manifest/  lecture des fichiers de dépendances et de verrouillage (watch import)

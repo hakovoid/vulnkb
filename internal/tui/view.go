@@ -8,6 +8,7 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 
+	"vulnkb/internal/euvd"
 	"vulnkb/internal/model"
 	"vulnkb/internal/store"
 )
@@ -391,8 +392,31 @@ func (m *ui) detailLines(a model.Advisory, w int) []string {
 	kv("ID", shortAliases(a.ExternalID, 8))
 	src := sourceOf(a.Source)
 	kv("Source", src.color+src.name+reset)
+	euvdRefs := m.euvdFor(a)
 	if m.exploited(a) {
-		kv("Exploitation", boldRed+"exploitée activement"+reset+dim+" · catalogue CISA KEV"+reset)
+		var by []string
+		if m.inKEV(a) {
+			by = append(by, "catalogue CISA KEV")
+		}
+		for _, r := range euvdRefs {
+			if !r.ExploitedSince.IsZero() {
+				by = append(by, "ENISA (EUVD)")
+				break
+			}
+		}
+		txt := boldRed + "exploitée activement" + reset
+		if len(by) > 0 {
+			txt += dim + " · " + strings.Join(by, ", ") + reset
+		}
+		kv("Exploitation", txt)
+	}
+	for _, r := range euvdRefs {
+		line := blue + r.ID + reset
+		if since := r.ExploitedSince; !since.IsZero() && since.Unix() > 1 {
+			line += dim + " · exploitée depuis le " + since.Format("2006-01-02") + reset
+		}
+		kv("EUVD", line)
+		lines = append(lines, strings.Repeat(" ", labelW+1)+linkLine(euvd.PageURL+r.ID, w-labelW-1, labelColor))
 	}
 	if sev := parseSeverity(a.Severity); sev.level > 0 {
 		txt := bold + sev.color() + sev.label() + reset

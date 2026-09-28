@@ -140,9 +140,22 @@ UPDATE advisories SET shadowed = 0 WHERE source = 'nvd' AND shadowed = 1 AND NOT
 }
 
 // kevLinked liste les entrées qui partagent un CVE avec le catalogue CISA KEV
-// (les entrées KEV elles-mêmes comprises).
-const kevLinked = `SELECT c.id FROM advisory_cves c
-    JOIN advisory_cves k ON k.cve = c.cve AND k.id >= 'cisa-kev:' AND k.id < 'cisa-kev;'`
+// (les entrées KEV elles-mêmes comprises), ou avec la liste des failles
+// exploitées de l'ENISA (EUVD). Chaque moitié part de la petite liste.
+const kevLinked = `SELECT c.id FROM advisory_cves k
+    JOIN advisory_cves c ON c.cve = k.cve
+    WHERE k.id >= 'cisa-kev:' AND k.id < 'cisa-kev;'
+UNION SELECT c.id FROM euvd e
+    JOIN advisory_cves c ON c.cve = e.cve
+    WHERE e.exploited_since > 0`
+
+// exploitedExpr calcule le marqueur « exploitée » d'une seule entrée
+// (« advisories » dans un UPDATE), sans parcourir les listes entières.
+const exploitedExpr = `(EXISTS (SELECT 1 FROM advisory_cves c
+       JOIN advisory_cves k ON k.cve = c.cve AND k.id >= 'cisa-kev:' AND k.id < 'cisa-kev;'
+       WHERE c.id = advisories.id)
+    OR EXISTS (SELECT 1 FROM advisory_cves c JOIN euvd e ON e.cve = c.cve AND e.exploited_since > 0
+       WHERE c.id = advisories.id))`
 
 // RefreshExploited met à jour le marqueur « exploitée activement ».
 func (s *Store) RefreshExploited() error {
@@ -227,7 +240,7 @@ END;
 // migrate crée le schéma, ou fait évoluer une base créée par une version
 // antérieure. La table FTS5 est tenue à jour par des triggers.
 func (s *Store) migrate() error {
-	if _, err := s.db.Exec(tableSchema + cvelistSchema + rangesSchema); err != nil {
+	if _, err := s.db.Exec(tableSchema + cvelistSchema + rangesSchema + euvdSchema); err != nil {
 		return fmt.Errorf("migration: %w", err)
 	}
 	if _, err := s.addColumnIfMissing("advisories", "remediation", "TEXT"); err != nil {
@@ -503,7 +516,7 @@ ON CONFLICT(id) DO UPDATE SET
 			}
 		}
 		if _, err := tx.Exec(`UPDATE advisories SET eff_level = `+effectiveLevel+`,
-    exploited = (id IN (`+kevLinked+` WHERE c.id = ?)),
+    exploited = `+exploitedExpr+`,
     epss = COALESCE(`+bestEPSS("score")+`, 0), epss_pct = COALESCE(`+bestEPSS("percentile")+`, 0)
     WHERE id = ?`, a.ID, a.ID); err != nil {
 			return n, fmt.Errorf("upsert %s: %w", a.ID, err)
@@ -532,7 +545,7 @@ func (s *Store) SearchPageSorted(query string, sort Sort, offset, limit int) ([]
 	if limit <= 0 {
 		limit = 50
 	}
-	q := ParseQuery(query)
+	q := s.resolveEUVD(ParseQuery(query))
 	if q.Impossible() {
 		return nil, nil
 	}
@@ -739,7 +752,7 @@ func (s *Store) SetMeta(key, value string) error {
 
 // CountMatches renvoie le nombre total de résultats d'une recherche.
 func (s *Store) CountMatches(query string) (int, error) {
-	q := ParseQuery(query)
+	q := s.resolveEUVD(ParseQuery(query))
 	if q.Impossible() {
 		return 0, nil
 	}

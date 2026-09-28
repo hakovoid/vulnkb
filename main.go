@@ -24,6 +24,7 @@ import (
 
 	"vulnkb/internal/cvelist"
 	"vulnkb/internal/epss"
+	"vulnkb/internal/euvd"
 	"vulnkb/internal/exploits"
 	"vulnkb/internal/extract"
 	"vulnkb/internal/glossary"
@@ -361,7 +362,7 @@ func envOr(key, def string) string {
 func sync(st *store.Store, names []string) error {
 	var srcs []source.Source
 	all := len(names) == 0
-	withNVD, withCVEList, withExploits, withEPSS := all, all, all, all
+	withNVD, withCVEList, withEUVD, withExploits, withEPSS := all, all, all, all, all
 	if !all {
 		for _, n := range names {
 			switch n {
@@ -369,6 +370,8 @@ func sync(st *store.Store, names []string) error {
 				withNVD = true
 			case "cvelist", "vulnrichment":
 				withCVEList = true
+			case "euvd", "enisa":
+				withEUVD = true
 			case "exploits", "exploit":
 				withExploits = true
 			case "epss":
@@ -421,6 +424,9 @@ func sync(st *store.Store, names []string) error {
 	}
 	if withCVEList {
 		syncCVEList(st)
+	}
+	if withEUVD {
+		syncEUVD(st)
 	}
 	if withExploits {
 		syncExploits(st)
@@ -552,6 +558,69 @@ func syncCVEList(st *store.Store) {
 	records, ssvc, _ := st.CountCVEList()
 	fmt.Printf("%s fiches lues, %s utiles en %s ; %s CVE complétés, %s évaluations SSVC\n",
 		groupInt(seen), groupInt(kept), time.Since(start).Round(time.Second), groupInt(records), groupInt(ssvc))
+}
+
+// euvdSyncedKey date la dernière collecte EUVD réussie.
+const euvdSyncedKey = "euvd_synced"
+
+// syncEUVD collecte l'apport propre de la base européenne EUVD (ENISA) : la
+// liste complète des failles qu'elle signale exploitées, et les identifiants
+// EUVD des fiches mises à jour depuis la dernière collecte (7 jours la
+// première fois, ou VULNKB_EUVD_DAYS : environ 700 fiches par jour, servies
+// par pages de 100 à un débit limité).
+func syncEUVD(st *store.Store) {
+	fmt.Print("→ euvd (base européenne de l'ENISA)… ")
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
+	defer cancel()
+	start := time.Now()
+	client := &http.Client{Timeout: time.Minute}
+
+	var exploited []euvd.Record
+	err := euvd.Fetch(ctx, client, euvd.SearchURL, euvd.Query{Exploited: true}, func(r euvd.Record) error {
+		exploited = append(exploited, r)
+		return nil
+	})
+	if err == nil {
+		err = st.ReplaceEUVDExploited(exploited)
+	}
+	if err != nil {
+		fmt.Printf("échec : %v\n", err)
+		return
+	}
+
+	days := 7
+	if d, err := strconv.Atoi(os.Getenv("VULNKB_EUVD_DAYS")); err == nil && d > 0 {
+		days = d
+	}
+	from := start.AddDate(0, 0, -days)
+	if last, _ := st.Meta(euvdSyncedKey); last != "" && os.Getenv("VULNKB_EUVD_DAYS") == "" {
+		if t, err := time.Parse(time.RFC3339, last); err == nil && t.After(from) {
+			from = t.AddDate(0, 0, -1) // un jour de recouvrement
+		}
+	}
+	var batch []euvd.Record
+	n := 0
+	err = euvd.Fetch(ctx, client, euvd.SearchURL, euvd.Query{UpdatedFrom: from}, func(r euvd.Record) error {
+		batch = append(batch, r)
+		n++
+		if len(batch) >= 1000 {
+			err := st.UpsertEUVD(batch)
+			batch = batch[:0]
+			return err
+		}
+		return nil
+	})
+	if err == nil {
+		err = st.UpsertEUVD(batch)
+	}
+	if err != nil {
+		fmt.Printf("échec : %v\n", err)
+		return
+	}
+	st.SetMeta(euvdSyncedKey, start.Format(time.RFC3339))
+	ids, expl, _ := st.CountEUVD()
+	fmt.Printf("%s exploitées, %s fiches mises à jour depuis le %s en %s ; %s identifiants EUVD en base\n",
+		groupInt(expl), groupInt(n), from.Format("2006-01-02"), time.Since(start).Round(time.Second), groupInt(ids))
 }
 
 // nvdSyncedKey date la dernière synchro NVD complète ou incrémentale. Son nom

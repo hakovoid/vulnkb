@@ -219,8 +219,15 @@ func (m *ui) ensureVisible() {
 	}
 }
 
-// exploited indique si l'entrée, ou l'un de ses CVE, figure au catalogue KEV.
+// exploited indique si l'entrée, ou l'un de ses CVE, figure au catalogue KEV
+// ou dans la liste des failles exploitées de l'ENISA (colonne tenue à jour
+// par le store).
 func (m *ui) exploited(a model.Advisory) bool {
+	return a.Exploited || m.inKEV(a)
+}
+
+// inKEV indique si l'entrée, ou l'un de ses CVE, figure au catalogue KEV.
+func (m *ui) inKEV(a model.Advisory) bool {
 	if a.Source == "cisa-kev" {
 		return true
 	}
@@ -230,6 +237,12 @@ func (m *ui) exploited(a model.Advisory) bool {
 		}
 	}
 	return false
+}
+
+// euvdFor renvoie les identifiants EUVD (ENISA) des CVE de l'entrée.
+func (m *ui) euvdFor(a model.Advisory) []store.EUVDRef {
+	refs, _ := m.st.EUVDFor(store.CVEs(a.ExternalID))
+	return refs
 }
 
 // exploitsFor renvoie les exploits publics liés aux CVE de l'entrée.

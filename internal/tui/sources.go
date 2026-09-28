@@ -38,6 +38,11 @@ func SourceReport(st *store.Store) []string {
 	if n, _ := st.CountEPSS(); n > 0 {
 		lines = append(lines, fmt.Sprintf("  %-47s %9s", "probabilités d'exploitation (EPSS)", fmtInt(n)))
 	}
+	if ids, expl, _ := st.CountEUVD(); ids > 0 {
+		lines = append(lines,
+			fmt.Sprintf("  %-47s %9s", "identifiants EUVD (ENISA)", fmtInt(ids)),
+			fmt.Sprintf("  %-47s %9s", "failles exploitées selon l'ENISA", fmtInt(expl)))
+	}
 	if recs, ssvc, _ := st.CountCVEList(); recs+ssvc > 0 {
 		lines = append(lines,
 			fmt.Sprintf("  %-47s %9s", "CVE complétés par la liste officielle", fmtInt(recs)),
@@ -52,7 +57,7 @@ func SourceReport(st *store.Store) []string {
 		}
 		names = append(names, n)
 	}
-	names = append(names, "nvd", "cvelist", "exploits", "epss")
+	names = append(names, "nvd", "cvelist", "euvd", "exploits", "epss")
 	lines = append(lines, "", bold+"Noms pour « vulnkb sync <nom> »"+reset, "")
 	lines = append(lines, wrapLines("  "+strings.Join(names, ", "), 96)...)
 	lines = append(lines, "", dim+"Sans nom, « vulnkb sync » collecte tout sauf les sources à la demande."+reset)

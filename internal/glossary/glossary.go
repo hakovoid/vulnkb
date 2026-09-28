@@ -31,6 +31,8 @@ func Sections() []Section {
 			{"KEV", "Known Exploited Vulnerabilities : catalogue CISA des failles vues exploitées dans la nature — à corriger en priorité."},
 			{"CISA", "Cybersecurity and Infrastructure Security Agency : agence de cybersécurité des États-Unis."},
 			{"CERT-FR", "Centre gouvernemental de veille, d'alerte et de réponse aux attaques informatiques, publie des avis et alertes en français."},
+			{"EUVD", "European Union Vulnerability Database : base européenne des vulnérabilités de l'ENISA (2025). Identifiant EUVD-AAAA-N, cité par les bulletins européens et cherchable dans vulnkb ; sa liste de failles exploitées compte pour le filtre exploitee."},
+			{"ENISA", "Agence de l'Union européenne pour la cybersécurité, qui tient l'EUVD."},
 			{"ANSSI", "Agence nationale de la sécurité des systèmes d'information : l'autorité française dont dépend le CERT-FR."},
 			{"CPE", "Common Platform Enumeration : identifiant normalisé d'un produit et d'une version (utilisé par NVD pour dire ce qui est affecté)."},
 			{"CVE List", "Liste officielle des CVE (programme CVE, dépôt cvelistV5) : chaque fiche telle que publiée par son émetteur, avant l'analyse de NVD. Comble les fiches NVD encore vides (produits, versions, CWE)."},

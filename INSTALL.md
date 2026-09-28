@@ -17,7 +17,8 @@ retrouver une info en quelques frappes.
   - Fedora : `sudo dnf install gcc`
 - **Accès réseau** vers GitHub (dépendances) et vers les sources de données
   (`cisa.gov`, `osv-vulnerabilities.storage.googleapis.com`,
-  `www.cert.ssi.gouv.fr`, `nvd.nist.gov`, `api.github.com` et `github.com`).
+  `www.cert.ssi.gouv.fr`, `nvd.nist.gov`, `api.github.com`, `github.com` et
+  `euvdservices.enisa.europa.eu`).
 
 ---
 
@@ -120,6 +121,18 @@ Sources disponibles :
   sans synchro, ou avec `VULNKB_CVELIST_FULL=1`, l'export complet est
   repris.
 
+- `euvd` : la base européenne des vulnérabilités de l'ENISA (ouverte en
+  2025). Son contenu recoupe la liste des CVE ; vulnkb n'en garde que
+  l'apport propre : la liste des failles que l'ENISA signale exploitées
+  (reprise en entier à chaque synchro, elle complète le catalogue CISA KEV
+  pour le filtre `exploitee` et le marqueur `●`), et l'identifiant EUVD de
+  chaque CVE, cité par les bulletins européens : chercher `EUVD-2026-72027`
+  ouvre la fiche du CVE, qui donne le lien vers la page de l'ENISA. Les
+  identifiants sont collectés sur les 7 derniers jours la première fois
+  (`VULNKB_EUVD_DAYS` pour remonter plus loin, environ 700 fiches par jour),
+  puis depuis la synchro précédente. L'API ne rend que 100 fiches par requête
+  et limite le débit : une synchro prend de 20 s à 1 min.
+
 Ordre de grandeur : un premier `sync` complet prend environ 3 minutes sur une
 bonne connexion, pour environ 420 000 entrées (dont 388 000 affichées) et une
 base d'environ 1,2 Go, dont 800 Mo pour NVD.
@@ -214,7 +227,7 @@ Des filtres se combinent au texte :
 | `sev:crit,high` | plusieurs sévérités |
 | `sev:high+` | cette sévérité ou plus grave |
 | `src:kev` | une source (`kev`, `osv`, `fr`, `nvd`, `ia`) ; `src:kev,fr` pour plusieurs |
-| `exploitee` | failles exploitées activement : CVE présent dans CISA KEV, toutes sources confondues |
+| `exploitee` | failles exploitées activement : CVE présent dans CISA KEV ou dans la liste des exploitées de l'ENISA (EUVD), toutes sources confondues |
 | `exploit` | un exploit ou une preuve de concept public existe (Exploit-DB, Metasploit, GitHub, ou évaluation SSVC de la CISA) |
 | `epss:10` | probabilité d'exploitation EPSS d'au moins 10 % (`epss:1`, `epss:50`…) |
 | `mes` | seulement les produits de ta liste de surveillance (voir ci-dessous) |

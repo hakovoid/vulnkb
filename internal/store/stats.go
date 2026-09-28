@@ -120,7 +120,7 @@ func (s *Store) topCWE(n int) ([]CWECount, error) {
 // surveillance donnée (au lieu de la liste courante) : sert à mesurer
 // l'exposition produit par produit.
 func (s *Store) CountWithWatch(terms []string, query string) (int, error) {
-	q := ParseQuery(query)
+	q := s.resolveEUVD(ParseQuery(query))
 	q.WatchReq, q.Watch = true, terms
 	if q.Impossible() {
 		return 0, nil
