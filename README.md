@@ -18,8 +18,71 @@ questions comme :
 Environ 390 000 entrées, une base d'environ 1 Go, aucune dépendance à un
 service en ligne une fois la collecte faite.
 
+## Fonctionnalités
+
+**Collecte**
+- 7 sources publiques : CISA KEV, OSV.dev (Go, PyPI, npm, Packagist, crates.io,
+  Maven), CERT-FR en français, NVD (tous les CVE), exploits publics (Exploit-DB,
+  Metasploit, PoC-in-GitHub) et scores EPSS.
+- Synchronisation incrémentale : après la première fois, seules les nouveautés
+  sont téléchargées. Pas de doublons.
+- Dédoublonnage entre sources : une faille décrite par plusieurs sources est
+  fusionnée, et ses alias (CVE, GHSA, GO, PYSEC) restent cherchables.
+- Enrichissement croisé : chaque entrée reçoit le score CVSS de NVD, le
+  marqueur « exploitée » (KEV), les exploits publics, la probabilité EPSS et
+  un renvoi vers l'avis CERT-FR.
+- Ajout de tes propres articles ou notes : un LLM local (Ollama) les met au
+  format de la base (`vulnkb add`).
+- Sources perso ajoutables en un fichier Go.
+
+**Recherche**
+- Plein-texte instantané sur environ 390 000 entrées (SQLite FTS5) : par
+  identifiant, produit, CWE, version ou mot-clé. Accents et casse sont
+  ignorés.
+- Filtres combinables :
+  - sévérité (`sev:high+`) ;
+  - source (`src:fr`) ;
+  - faille exploitée (`exploitee`) ;
+  - exploit public (`exploit`) ;
+  - probabilité EPSS (`epss:10`) ;
+  - tes produits (`mes`).
+- 4 tris : pertinence, date, criticité, EPSS.
+
+**Tes produits**
+- Liste de surveillance (`mes`) : termes simples ou paquets exacts
+  (`npm:express`).
+- Import automatique des dépendances de tes projets : `package.json`,
+  `go.mod`, `requirements.txt`, `pyproject.toml`, `composer.json`,
+  `Cargo.toml`, `docker-compose`.
+- Exposition par produit dans les statistiques.
+
+**Interface terminal**
+- Deux panneaux, liste et fiche, redimensionnables au clavier ou à la souris.
+- Bloc « Que faire » en tête de fiche : priorité, action, lien de correctif.
+- Scores CVSS et EPSS, exploits publics, versions affectées et corrigées, CWE
+  nommées en français.
+- Blocs de code colorés et liens cliquables (OSC 8).
+- Vue des sources (`Alt-S`), statistiques en barres (`Alt-I`), aide et
+  glossaire des acronymes (`?`).
+- 6 thèmes de couleurs. L'interface s'adapte aux fonds clair ou sombre et aux
+  petits terminaux.
+- Raccourcis `Alt` et `Ctrl` : ils marchent aussi dans VS Code.
+
+**Rapports**
+- Export HTML autonome d'une fiche (`Alt-E`) ou d'une recherche entière
+  (`Alt-R`, `vulnkb export`), lisible hors ligne et imprimable.
+- Statistiques en ligne de commande (`vulnkb stats`), aperçu de la base
+  (`vulnkb info`), glossaire (`vulnkb glossaire`).
+
+**Local et en français**
+- Tout tient dans un fichier SQLite local, sans compte et sans service en
+  ligne.
+- LLM local via Ollama.
+- Interface, fiches CERT-FR, glossaire et noms des CWE en français.
+
 ## Sommaire
 
+- [Fonctionnalités](#fonctionnalités)
 - [Installation](#installation)
 - [Démarrage rapide](#démarrage-rapide)
 - [Rechercher](#rechercher) — syntaxe, filtres, tris, exemples
