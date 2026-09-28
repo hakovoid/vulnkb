@@ -4,34 +4,319 @@
   <img src="docs/logo.svg" alt="vulnkb" width="680">
 </p>
 
-Base de connaissances de sécurité consultable en TUI. Collecte des advisories
-de vulnérabilités depuis des sources publiques, les normalise dans un format
-commun, les stocke dans SQLite avec recherche plein-texte (FTS5), et permet de
-les interroger rapidement au clavier.
+Base de connaissances de sécurité, **en local et en français**, consultable au
+clavier dans le terminal. vulnkb collecte les vulnérabilités publiées par les
+sources publiques (CISA KEV, OSV, CERT-FR, NVD, exploits publics, EPSS), les
+normalise dans un format commun, les stocke dans SQLite avec recherche
+plein-texte (FTS5), et te permet de répondre en quelques frappes à des
+questions comme :
 
-## Utilisation
+- *« Mes dépendances ont-elles une faille critique exploitée ? »* → `mes exploitee`
+- *« Qu'est-ce qui touche nginx et a un exploit public ? »* → `nginx exploit`
+- *« Quelles failles risquent le plus d'être exploitées ce mois-ci ? »* → `epss:50`, tri par EPSS
 
-Le stockage utilise `github.com/mattn/go-sqlite3` (cgo) : il faut un
-compilateur C et le tag de build `sqlite_fts5` pour activer la recherche
-plein-texte.
+Environ 390 000 entrées, une base d'environ 1 Go, aucune dépendance à un
+service en ligne une fois la collecte faite.
+
+## Sommaire
+
+- [Installation](#installation)
+- [Démarrage rapide](#démarrage-rapide)
+- [Rechercher](#rechercher) — syntaxe, filtres, tris, exemples
+- [L'interface (TUI)](#linterface-tui) — raccourcis clavier
+- [Suivre tes produits (filtre `mes`)](#suivre-tes-produits-filtre-mes)
+- [Statistiques](#statistiques)
+- [Exporter en HTML](#exporter-en-html)
+- [Ajouter un article ou un texte](#ajouter-un-article-ou-un-texte)
+- [Sources](#sources) et [synchronisation](#synchroniser)
+- [Toutes les commandes](#toutes-les-commandes)
+- [Variables d'environnement](#variables-denvironnement)
+- [Fichiers](#fichiers)
+- [Architecture](#architecture)
+- [Ajouter une source perso](#ajouter-une-source-perso)
+
+Le guide détaillé (prérequis, dépannage, détail de chaque source) est dans
+[INSTALL.md](INSTALL.md).
+
+## Installation
+
+Il faut **Go 1.25+** et un **compilateur C** (le stockage utilise
+`github.com/mattn/go-sqlite3`, en cgo). Le tag `sqlite_fts5` est obligatoire :
+il active la recherche plein-texte.
 
 ```sh
-go mod tidy                                   # dépendances (une fois)
+go mod tidy                                            # dépendances (une fois)
 CGO_ENABLED=1 go build -tags sqlite_fts5 -o vulnkb .   # compile
-
-./vulnkb sources         # sources : contenu, entrées, dernière collecte (Alt-S dans la TUI)
-./vulnkb sync            # collecte les sources par défaut dans la base
-./vulnkb sync osv-npm    # collecte une source précise
-./vulnkb watch add nginx # suit un produit (filtre « mes », Ctrl-T dans la TUI)
-./vulnkb watch import ~/projets  # suit toutes les dépendances de tes projets
-./vulnkb add <url|fichier|->  # ajoute un article ou un texte via Ollama
-./vulnkb glossaire       # définitions FR de tous les acronymes
-./vulnkb info            # aperçu : taille de la base, entrées par source
-./vulnkb stats           # statistiques + exposition de tes produits (Alt-I)
-./vulnkb export mes sev:high+   # rapport HTML d'une recherche (Alt-R / Alt-E dans la TUI)
-./vulnkb theme rose      # thème de couleurs : bleu, rose, vert, cyan, violet, orange (Ctrl-Y dans la TUI)
-./vulnkb                 # lance la TUI de recherche (commande par défaut)
+cp vulnkb ~/.local/bin/                                # optionnel : l'avoir partout
+CGO_ENABLED=1 go test -tags sqlite_fts5 ./...          # tests
 ```
+
+## Démarrage rapide
+
+```sh
+vulnkb sync                          # 1re collecte : ~2 min, ~1 Go
+vulnkb watch import ~/kuro_apps      # suivre les dépendances de tes projets
+vulnkb                               # ouvrir l'interface
+```
+
+Dans l'interface, tape `mes sev:high+` : ce sont les failles graves qui
+touchent tes projets. `?` affiche l'aide, `Esc` quitte.
+
+## Rechercher
+
+La même syntaxe sert partout : dans la barre de recherche de l'interface et
+dans `vulnkb export`.
+
+### Texte libre
+
+La recherche porte sur l'identifiant (CVE, GHSA… et leurs alias), le titre, le
+résumé, le composant, le type de faille (CWE), les versions et la
+remédiation. Chaque mot est un **début de mot**, plusieurs mots se cumulent
+(ET), casse et accents sont ignorés.
+
+| Recherche | Trouve |
+|-----------|--------|
+| `CVE-2021-44228` | un CVE précis (Log4Shell), quelle que soit la source |
+| `CVE-2026` | tous les CVE de 2026 |
+| `GHSA-` | les avis GitHub |
+| `log4j` | tout ce qui parle de log4j |
+| `nginx` | le produit nginx (titre, composant, description) |
+| `golang.org/x/net` | un module Go précis |
+| `deserializ` | désérialisation, deserialize, deserialization… (début de mot) |
+| `CWE-79` | les XSS (catégorie de faiblesse) |
+| `RCE` | exécution de code à distance |
+| `sql injection wordpress` | les trois mots à la fois |
+| `1.27.1` | un numéro de version |
+| `vtiger` | produits hors registres de paquets (via NVD et CERT-FR) |
+
+### Filtres
+
+Ils se combinent entre eux et avec le texte. Les filtres reconnus s'affichent
+à droite de la saisie ; un filtre mal écrit apparaît en rouge.
+
+| Filtre | Garde |
+|--------|-------|
+| `sev:crit` | sévérité critique (`crit`, `high`, `med`, `low`, `inconnue`, ou `critique`, `elevee`, `moyenne`, `faible`) |
+| `sev:crit,high` | plusieurs sévérités |
+| `sev:high+` | cette sévérité **ou plus grave** |
+| `src:kev` | une source : `kev`, `osv`, `fr` (CERT-FR), `nvd`, `ia` (articles ajoutés) ; `src:kev,fr` pour plusieurs |
+| `exploitee` | faille **exploitée activement** (CVE au catalogue CISA KEV) — priorité absolue |
+| `exploit` | un **exploit ou une preuve de concept public** existe (Exploit-DB, Metasploit, GitHub) |
+| `epss:10` | probabilité d'exploitation EPSS **d'au moins 10 %** dans les 30 jours (`epss:1`, `epss:50`…) |
+| `mes` | seulement **tes produits** (liste de surveillance, voir plus bas) |
+
+`exploitee` veut dire que des attaques ont été observées pour de vrai, alors
+qu'`exploit` veut dire seulement que du code public existe. Les deux
+peuvent se cumuler.
+
+### Tris
+
+`Alt-O` (ou `Ctrl-O`) change l'ordre de la liste. En ligne de commande,
+utilise `-tri`.
+
+| Tri | Ordre | `-tri` |
+|-----|-------|--------|
+| **Pertinence** (défaut) | meilleure correspondance d'abord (score BM25 de l'index) ; sans texte : les plus récentes | `pertinence` |
+| **Date** | publication la plus récente d'abord | `date` |
+| **Criticité** | de critique à faible | `criticite` |
+| **EPSS** | la plus susceptible d'être exploitée d'abord | `epss` |
+
+### Exemples de recherches
+
+**Prioriser tes correctifs**
+
+```text
+mes exploitee                 tes produits, failles exploitées activement → à corriger d'abord
+mes sev:crit                  tes produits, sévérité critique
+mes sev:high+ exploit         tes produits, grave, avec exploit public
+mes epss:10                   tes produits, probabilité d'exploitation ≥ 10 % (trier par EPSS)
+mes exploit                   tes produits pour lesquels un exploit circule
+```
+
+**Veille générale**
+
+```text
+exploitee                     tout le catalogue KEV (≈ 2 500 failles exploitées)
+exploitee src:fr              les failles exploitées qui ont un avis CERT-FR, en français
+epss:50                       les failles jugées les plus menacées
+exploit sev:crit              critiques avec exploit public
+exploitee exploit             exploitées ET avec exploit public
+src:fr                        les avis CERT-FR (tri Date pour les derniers)
+src:ia                        les articles que tu as ajoutés
+```
+
+**Un produit, une techno**
+
+```text
+nginx sev:high+               nginx, grave
+nginx exploit                 nginx, avec exploit public
+gitea sev:crit                gitea, critique
+wordpress plugin CWE-89       injections SQL dans des plugins WordPress
+openssl src:nvd               les fiches NVD d'openssl (masquées par défaut si doublon)
+npm express                   express côté npm (synchroniser osv-npm d'abord)
+pillow src:osv                les avis OSV de Pillow (PyPI)
+```
+
+**Par type de faille**
+
+```text
+CWE-79 sev:high+              XSS graves
+CWE-502 exploit               désérialisation avec exploit public
+SSRF exploitee                SSRF exploitées
+path traversal sev:crit       traversée de répertoire critique
+```
+
+**En ligne de commande** (rapport HTML de la recherche)
+
+```sh
+vulnkb export mes sev:high+
+vulnkb export -tri epss mes exploit
+vulnkb export -tri date -o ~/veille-fr.html src:fr exploitee
+```
+
+## L'interface (TUI)
+
+`vulnkb` (ou `vulnkb tui`) ouvre deux panneaux : à gauche la liste, à droite
+la fiche.
+
+Chaque ligne de la liste contient, dans l'ordre :
+
+- un `●` rouge si la faille est exploitée ;
+- la sévérité en couleur ;
+- la source (`KEV`, `OSV`, `FR`, `NVD`, `IA`) ;
+- l'identifiant et le titre ;
+- le score EPSS, si la largeur le permet.
+
+La fiche commence par un bloc **« Que faire »** : la priorité, l'action
+concrète (version corrective, remédiation) et le lien le plus utile. Viennent
+ensuite les scores (CVSS, EPSS), les exploits publics, les avis CERT-FR liés
+et les références. Les liens sont cliquables.
+
+| Touche | Action |
+|--------|--------|
+| *(taper)* | filtrer en direct |
+| `↑` `↓` · `PgUp` `PgDn` · `Début` `Fin` | naviguer (liste ou fiche) |
+| `Tab` | passer de la liste à la fiche |
+| `Entrée` | fiche en plein écran |
+| `Alt-G` | aller au résultat n° … |
+| `Alt-T` | activer / couper le filtre `mes` |
+| `Alt-O` | changer le tri : pertinence → date → criticité → EPSS |
+| `Alt-S` | liste des sources (contenu, entrées, dernière collecte) |
+| `Alt-I` | statistiques |
+| `Alt-E` | exporter la fiche affichée en HTML |
+| `Alt-R` | exporter tous les résultats en HTML |
+| `Alt-Y` | changer le thème de couleurs |
+| `Alt-←` `Alt-→` | redimensionner les panneaux (ou glisser la séparation à la souris) |
+| `Alt-M` | rendre la souris au terminal (clic sur les liens, sélection) |
+| `?` | aide : touches, couleurs, glossaire des acronymes |
+| `Esc` · `Ctrl-C` | fermer / quitter |
+
+Chaque raccourci `Alt` existe aussi en `Ctrl` (`Ctrl-O`, `Ctrl-T`…). Utilise
+la version `Alt` quand le terminal garde le `Ctrl` pour lui : VS Code
+intercepte par exemple `Ctrl-G`.
+
+Thèmes : **bleu**, **rose**, **vert**, **cyan**, **violet**, **orange**. Pour
+en choisir un : `vulnkb theme vert` ou `Alt-Y`. Le choix est mémorisé.
+
+## Suivre tes produits (filtre `mes`)
+
+La liste de surveillance est le fichier `~/.config/vulnkb/watch.txt`. Il
+contient un terme par ligne, `#` sert aux commentaires, et il s'édite à la
+main.
+
+```sh
+vulnkb watch                         # affiche la liste
+vulnkb watch add nginx redis vtiger  # ajoute des produits
+vulnkb watch add npm:axios pypi:fastapi   # ajoute des paquets exacts
+vulnkb watch rm vtiger               # en retire
+vulnkb watch import ~/kuro_apps      # ajoute les dépendances de tous tes projets
+vulnkb watch import -n ~/kuro_apps   # simulation, sans rien modifier
+```
+
+Il y a deux sortes de termes :
+
+- **simple** (`nginx`, `redis`, `vtiger`) : cherché en début de mot dans
+  l'identifiant, le titre et le composant.
+- **qualifié** (`npm:express`, `pypi:pillow`, `go:github.com/spf13/cobra`,
+  `packagist:…`, `crates:…`) : seul ce paquet exact compte. Par exemple,
+  `npm:react` ne ramène pas `@aws-amplify/codegen-ui-react`.
+
+`watch import` lit les fichiers suivants : `package.json`, `go.mod`,
+`requirements.txt`, `pyproject.toml`, `composer.json`, `Cargo.toml` et les
+images `docker-compose`. Il ignore `node_modules`, les dossiers cachés et les
+sauvegardes. Les dépendances de dev et les dépendances Go indirectes ne sont
+ajoutées qu'avec `-dev` et `-indirect`.
+
+Si tes projets utilisent npm, lance aussi `vulnkb sync osv-npm`, qui n'est pas
+dans le sync par défaut.
+
+## Statistiques
+
+`Alt-I` dans l'interface, ou `vulnkb stats` :
+
+- **vue d'ensemble** : entrées visibles et publiées ces 30 derniers jours ;
+- **sévérités**, **menace** (exploitées, exploit public, EPSS ≥ 10 % et ≥ 50 %)
+  et **années de publication**, en barres ;
+- **sources** et **faiblesses les plus fréquentes** (CWE, avec leur nom) ;
+- **ton exposition** : totaux pour ta liste de surveillance, et les produits
+  les plus exposés (entrées critiques ou élevées, dont exploitées).
+
+## Exporter en HTML
+
+Une fiche ou une recherche entière s'exporte en un fichier HTML autonome :
+lisible hors ligne, imprimable, en thème clair ou sombre selon le navigateur.
+
+- Dans l'interface : `Alt-E` exporte la fiche affichée, `Alt-R` tous les
+  résultats dans l'ordre du tri courant.
+- En ligne de commande : `vulnkb export [-tri mode] [-max N] [-o fichier] <recherche…>`.
+
+```sh
+vulnkb export mes sev:high+                         # tes produits, grave
+vulnkb export -tri epss mes epss:10                 # tes produits les plus menacés
+vulnkb export -o ~/rapport.html exploitee src:fr    # fichier choisi
+vulnkb export -max 50 -tri criticite nginx          # 50 fiches au plus
+```
+
+Le rapport s'ouvre sur des compteurs et un sommaire, puis donne chaque fiche
+complète. Il contient 1 000 fiches au plus. Les fichiers vont dans
+`~/vulnkb-exports/`, ou dans `VULNKB_EXPORT_DIR` si tu l'as défini. Le contenu
+est échappé : un texte piégé ne peut rien exécuter.
+
+## Ajouter un article ou un texte
+
+`vulnkb add` transforme un document en fiche de la base, grâce à un LLM local
+(Ollama). Tu peux lui donner le contenu de trois façons :
+
+```sh
+vulnkb add https://blog.example/write-up              # une page web (téléchargée)
+vulnkb add ~/notes/faille-vtiger.md                   # un fichier : texte, Markdown ou HTML enregistré
+xclip -o | vulnkb add -url https://origine.example -  # un texte envoyé par pipe
+vulnkb add -                                          # colle le texte, puis Ctrl-D
+```
+
+**Le texte est mis au format de la base automatiquement.** Le modèle lit le
+contenu et remplit une fiche :
+
+- titre et résumé en français ;
+- composant, type de faille et sévérité ;
+- versions affectées et corrigées, remédiation ;
+- identifiants CVE/GHSA.
+
+La fiche est affichée, puis enregistrée seulement si tu confirmes (`-y` pour
+ne pas demander). Elle apparaît ensuite avec la source `IA`, pour rappeler
+qu'elle est à relire. Tu la retrouves avec `src:ia`.
+
+- **Origine** : pour une page web, son URL sert de lien et d'identifiant. Pour
+  un texte, indique-la avec `-url` si tu la connais. Sinon, l'identifiant est
+  calculé à partir du contenu : réimporter le même texte met à jour la fiche
+  au lieu de la dupliquer.
+- **Garde-fous** : un CVE, un GHSA ou un numéro de version proposé par le
+  modèle est retiré s'il n'apparaît pas dans le texte. Le résumé et la
+  sévérité, eux, ne sont pas vérifiés : relis-les.
+- **Réglages** : le modèle se choisit avec `-model` ou `VULNKB_MODEL` (défaut
+  `qwen2.5-coder:7b`), l'adresse d'Ollama avec `-ollama` ou `OLLAMA_HOST`
+  (défaut `http://localhost:11434`). Sans GPU, compte de 1 à 4 minutes selon
+  la longueur du texte.
 
 ## Sources
 
@@ -42,74 +327,110 @@ CGO_ENABLED=1 go build -tags sqlite_fts5 -o vulnkb .   # compile
 | `osv-npm` | advisories OSV.dev npm (export de ~200 Mo) | non, `vulnkb sync osv-npm` |
 | `certfr` | avis et alertes du CERT-FR (ANSSI), **en français** : systèmes affectés, risques, solution, CVE | oui |
 | `nvd` | tous les CVE de la base NVD (NIST) : description, produits et versions (CPE), CWE, score CVSS. Les scores complètent la sévérité des autres sources ; un CVE déjà décrit ailleurs est masqué côté NVD (sauf `src:nvd`) | oui |
-| `exploits` | exploits et PoC publics par CVE (Exploit-DB, Metasploit, GitHub) : marqueur et filtre `exploit`, liens dans la fiche | oui |
+| `exploits` | exploits et PoC publics par CVE (Exploit-DB, Metasploit, GitHub), en métadonnées seulement : marqueur et filtre `exploit`, liens dans la fiche | oui |
 | `epss` | probabilité EPSS (FIRST) qu'un CVE soit exploité dans les 30 jours, mise à jour chaque jour : ligne dans la fiche, filtre `epss:10`, tri par EPSS | oui |
 
-`certfr` couvre les 3 dernières années par défaut (`VULNKB_CERTFR_DAYS` pour
-la profondeur) ; les synchros suivantes ne récupèrent que les bulletins
-nouveaux ou révisés, et élargir la fenêtre rattrape automatiquement les plus
-anciens. Dans la TUI, une entrée CISA ou OSV dont un CVE est couvert par un
-avis CERT-FR affiche un renvoi vers cet avis.
+`certfr` couvre les 3 dernières années par défaut. `VULNKB_CERTFR_DAYS` règle
+cette profondeur. Les synchros suivantes ne récupèrent que les bulletins
+nouveaux ou révisés. Une entrée CISA ou OSV dont un CVE est couvert par un avis
+CERT-FR affiche un renvoi vers cet avis.
 
-Les entrées OSV `MAL-*` (paquets malveillants) et les advisories retirés sont
-ignorés ; une même faille publiée sous plusieurs identifiants (GHSA / GO /
-PYSEC) n'est gardée qu'une fois, ses alias restant cherchables.
+Certaines entrées sont écartées ou fusionnées :
 
-## Ajouter un article ou un texte
+- les entrées OSV `MAL-*` (paquets malveillants) et les advisories retirés
+  sont ignorés ;
+- une même faille publiée sous plusieurs identifiants (GHSA, GO, PYSEC) n'est
+  gardée qu'une fois, et ses alias restent cherchables.
 
-`vulnkb add` transforme un document en fiche de la base, grâce à un LLM local
-(Ollama). Trois façons de lui donner le contenu :
+`vulnkb sources` (ou `Alt-S`) liste les sources avec leur nombre d'entrées et
+la date de leur dernière collecte.
+
+### Synchroniser
+
+La collecte est **manuelle** : lance `vulnkb sync` quand tu veux rafraîchir.
+Après la première fois, un sync ne prend que quelques dizaines de secondes.
 
 ```sh
-vulnkb add https://blog.example/write-up              # une page web (téléchargée)
-vulnkb add ~/notes/faille-vtiger.md                   # un fichier : texte, Markdown ou HTML enregistré
-xclip -o | vulnkb add -url https://origine.example -  # un texte envoyé par pipe
-vulnkb add -                                          # colle le texte, puis Ctrl-D
+vulnkb sync                  # toutes les sources par défaut
+vulnkb sync certfr epss      # seulement certaines sources
+vulnkb sync osv-npm          # une source optionnelle
+VULNKB_NVD_FULL=1 vulnkb sync nvd   # re-télécharger tout NVD
 ```
 
-**Oui, le texte est mis au format de la base automatiquement.** Le modèle lit
-le contenu et remplit une fiche : titre, résumé en français, composant, type de
-faille, sévérité, versions affectées et corrigées, remédiation, identifiants
-CVE/GHSA. La fiche est affichée, puis enregistrée seulement si tu confirmes
-(`-y` pour ne pas demander). Elle apparaît ensuite dans la TUI avec la source
-`IA`, pour rappeler qu'elle est à relire.
+Ce qu'un sync touche et ne touche pas :
 
-- **Origine** : pour une page web, son URL sert de lien et d'identifiant. Pour
-  un texte, indique-la avec `-url` si tu la connais ; sinon l'identifiant est
-  calculé à partir du contenu (réimporter le même texte met à jour la fiche au
-  lieu de la dupliquer).
-- **Garde-fous** : un CVE, un GHSA ou un numéro de version proposé par le
-  modèle est retiré s'il n'apparaît pas dans le texte. Le résumé et la
-  sévérité, eux, ne sont pas vérifiés : relis-les.
-- **Qualité du texte** : plus il est précis (produit, versions, CVE,
-  correctif), meilleure est la fiche. Une note de quelques lignes suffit.
-- **Réglages** : `-model` ou `VULNKB_MODEL` (défaut `qwen2.5-coder:7b`),
-  `-ollama` ou `OLLAMA_HOST` (défaut `http://localhost:11434`). Sans GPU,
-  compter de 1 à 4 minutes selon la longueur.
+- Les entrées collectées sont **mises à jour** à chaque sync : même
+  identifiant, pas de doublon.
+- Tes articles (`add`), ta liste de surveillance et ton thème ne sont **jamais
+  modifiés** par un sync.
 
-Tests : `CGO_ENABLED=1 go test -tags sqlite_fts5 ./...`
+Pour automatiser, par exemple chaque matin à 7 h, ajoute cette ligne avec
+`crontab -e` :
 
-Dans la TUI : tape pour filtrer en direct, `↑`/`↓` pour naviguer, `tab` pour
-passer de la liste au détail, `esc` (ou Ctrl-C) pour quitter.
+```cron
+0 7 * * * $HOME/.local/bin/vulnkb sync >/dev/null 2>&1
+```
 
-La base est stockée dans `~/.config/vulnkb/vulnkb.db` (ou le dossier courant).
+L'en-tête de l'interface indique l'âge du dernier sync (« ● sync il y a 4 h »).
+
+## Toutes les commandes
+
+| Commande | Rôle |
+|----------|------|
+| `vulnkb` / `vulnkb tui` | interface de recherche |
+| `vulnkb sync [source…]` | collecter (toutes les sources par défaut, ou celles nommées) |
+| `vulnkb sources` | sources : contenu, entrées, dernière collecte |
+| `vulnkb watch [add\|rm\|import] …` | gérer la liste de surveillance (filtre `mes`) |
+| `vulnkb add [-y] [-url U] [-model M] <url\|fichier\|->` | ajouter un article ou un texte via Ollama |
+| `vulnkb export [-tri T] [-max N] [-o F] <recherche…>` | rapport HTML d'une recherche |
+| `vulnkb stats` | statistiques et exposition de tes produits |
+| `vulnkb info` | aperçu : taille de la base, entrées par source, date EPSS |
+| `vulnkb theme [nom]` | lister ou choisir le thème de couleurs |
+| `vulnkb glossaire` | définitions en français des acronymes (CVE, CVSS, EPSS, CWE, RCE…) |
+
+## Variables d'environnement
+
+| Variable | Effet |
+|----------|-------|
+| `VULNKB_THEME` | force un thème pour une session (`VULNKB_THEME=vert vulnkb`) |
+| `VULNKB_ACCENT` | remplace la couleur d'accent (`#d97757`) |
+| `VULNKB_CODE_STYLE` | coloration des blocs de code (`monokai` par défaut, `github` pour fond clair, `dracula`, `nord`…) |
+| `VULNKB_MOUSE` | `0` : ne pas capter la souris (liens cliquables sans `Alt-M`) |
+| `VULNKB_EXPORT_DIR` | dossier des exports HTML (défaut `~/vulnkb-exports`) |
+| `VULNKB_CERTFR_DAYS` | profondeur de collecte CERT-FR en jours (défaut 3 ans) |
+| `VULNKB_NVD_FULL` | `1` : re-télécharger tous les flux NVD |
+| `VULNKB_MODEL` | modèle Ollama pour `add` (défaut `qwen2.5-coder:7b`) |
+| `OLLAMA_HOST` | adresse d'Ollama (défaut `http://localhost:11434`) |
+
+## Fichiers
+
+| Fichier | Contenu |
+|---------|---------|
+| `~/.config/vulnkb/vulnkb.db` | la base (ou le dossier courant si la config est inaccessible) ; la supprimer = repartir de zéro |
+| `~/.config/vulnkb/watch.txt` | la liste de surveillance |
+| `~/vulnkb-exports/` | les rapports HTML |
 
 > Note réseau : la collecte contacte `cisa.gov`,
 > `osv-vulnerabilities.storage.googleapis.com`, `www.cert.ssi.gouv.fr`,
-> `nvd.nist.gov`, `gitlab.com`, `raw.githubusercontent.com` et
-> `codeload.github.com` (exploits), et `go mod tidy` récupère les modules. Si ton environnement filtre les sorties réseau (proxy/allowlist),
-> autorise ces domaines et le proxy Go, ou utilise `GOPROXY=direct` pour tirer
-> les dépendances GitHub.
+> `nvd.nist.gov`, `epss.empiricalsecurity.com`, `gitlab.com`,
+> `raw.githubusercontent.com` et `codeload.github.com` (exploits), et
+> `go mod tidy` récupère les modules. Si ton réseau filtre les sorties, autorise
+> ces domaines, ou utilise `GOPROXY=direct` pour les dépendances.
 
 ## Architecture
 
 ```
-internal/model/    format normalisé (Advisory) — le pivot commun
-internal/store/    SQLite + index FTS5, upsert et recherche
-internal/source/   interface Source + registre ; une source = un fichier
-internal/extract/  article web → texte → fiche via Ollama (commande add)
-internal/tui/      interface Bubble Tea + Lipgloss (recherche / liste / fiche / aide)
-main.go            CLI : sync, sources, add, watch, info, glossaire, tui
+internal/model/     format normalisé (Advisory) — le pivot commun
+internal/store/     SQLite + index FTS5 : upsert, recherche, filtres, tris, statistiques
+internal/source/    interface Source + registre ; une source = un fichier
+internal/nvd/       scores et fiches NVD
+internal/exploits/  références d'exploits publics (Exploit-DB, Metasploit, GitHub)
+internal/epss/      scores EPSS (FIRST)
+internal/manifest/  lecture des fichiers de dépendances (watch import)
+internal/extract/   article ou texte → fiche via Ollama (commande add)
+internal/glossary/  glossaire des acronymes (aide et commande glossaire)
+internal/tui/       interface Bubble Tea + Lipgloss, statistiques, export HTML
+main.go, watch.go   CLI
 ```
 
 ## Ajouter une source perso
