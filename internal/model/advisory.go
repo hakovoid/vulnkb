@@ -3,7 +3,10 @@
 // converties vers cette structure commune.
 package model
 
-import "time"
+import (
+	"strings"
+	"time"
+)
 
 // Advisory est l'unité de connaissance : une vulnérabilité ou un article
 // technique, quelle que soit sa provenance.
@@ -56,4 +59,31 @@ type Advisory struct {
 	// (remplis à la lecture).
 	Exploited  bool
 	HasExploit bool
+
+	// Ranges : plages de versions vulnérables par paquet, sous forme
+	// comparable (sources de paquets comme OSV). Sert au filtre « mes » quand
+	// la liste de surveillance précise la version utilisée.
+	Ranges []Range
+}
+
+// Range est une plage de versions vulnérables d'un paquet : à partir de
+// Introduced (vide ou « 0 » : depuis toujours), jusqu'à Fixed exclue ou
+// LastAffected incluse (les deux vides : pas encore corrigée).
+type Range struct {
+	Ecosystem    string // en minuscules : npm, pypi, go, crates.io, packagist, maven
+	Package      string // nom normalisé (voir NormalizePackage)
+	Introduced   string
+	Fixed        string
+	LastAffected string
+}
+
+// NormalizePackage met un nom de paquet sous la forme utilisée pour les
+// comparaisons : minuscules, et pour PyPI « _ » et « . » équivalents à « - »
+// (PEP 503 : Foo_Bar == foo-bar).
+func NormalizePackage(ecosystem, name string) string {
+	name = strings.ToLower(strings.TrimSpace(name))
+	if strings.EqualFold(ecosystem, "pypi") {
+		name = strings.NewReplacer("_", "-", ".", "-").Replace(name)
+	}
+	return name
 }

@@ -22,7 +22,7 @@ type Store struct {
 
 // Open ouvre (ou crée) la base au chemin donné et applique le schéma.
 func Open(path string) (*Store, error) {
-	db, err := sql.Open("sqlite3", path)
+	db, err := sql.Open(driverName, path)
 	if err != nil {
 		return nil, fmt.Errorf("ouverture db: %w", err)
 	}
@@ -189,6 +189,9 @@ func (s *Store) DeleteAdvisories(ids []string) error {
 			if _, err := tx.Exec(`DELETE FROM advisory_cves WHERE id = ?`, id); err != nil {
 				return err
 			}
+			if _, err := tx.Exec(`DELETE FROM advisory_ranges WHERE id = ?`, id); err != nil {
+				return err
+			}
 		}
 		return nil
 	})
@@ -224,7 +227,7 @@ END;
 // migrate crée le schéma, ou fait évoluer une base créée par une version
 // antérieure. La table FTS5 est tenue à jour par des triggers.
 func (s *Store) migrate() error {
-	if _, err := s.db.Exec(tableSchema + cvelistSchema); err != nil {
+	if _, err := s.db.Exec(tableSchema + cvelistSchema + rangesSchema); err != nil {
 		return fmt.Errorf("migration: %w", err)
 	}
 	if _, err := s.addColumnIfMissing("advisories", "remediation", "TEXT"); err != nil {
@@ -493,6 +496,11 @@ ON CONFLICT(id) DO UPDATE SET
 		}
 		if err := writeCVEs(tx, a.ID, a.ExternalID); err != nil {
 			return n, fmt.Errorf("upsert %s: %w", a.ID, err)
+		}
+		if a.Ranges != nil || a.Source == "osv" {
+			if err := writeRanges(tx, a.ID, a.Ranges); err != nil {
+				return n, fmt.Errorf("upsert %s: %w", a.ID, err)
+			}
 		}
 		if _, err := tx.Exec(`UPDATE advisories SET eff_level = `+effectiveLevel+`,
     exploited = (id IN (`+kevLinked+` WHERE c.id = ?)),

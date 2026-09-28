@@ -147,26 +147,36 @@ func words(s string) string {
 }
 
 // termMatches reproduit en mémoire la règle du filtre « mes » pour un terme.
+// La version d'un terme qualifié n'est pas vérifiée ici (voir affects).
 func termMatches(term, externalID, title, component string) bool {
-	if eco, pkg, ok := strings.Cut(term, ":"); ok && pkg != "" {
-		if e, known := watchEcosystems[strings.ToLower(eco)]; known {
-			comp := strings.ToLower(component)
-			pkg = strings.ToLower(pkg)
-			head := e.label + " "
-			if !strings.HasPrefix(comp, head) {
-				return false
-			}
-			for _, p := range strings.Split(strings.TrimPrefix(comp, head), ", ") {
-				if p == pkg {
-					return true
-				}
-			}
+	wt := ParseWatchTerm(term)
+	if wt.Ecosystem != "" {
+		comp := strings.ToLower(component)
+		pkg := strings.ToLower(wt.Name)
+		head := wt.Label + " "
+		if !strings.HasPrefix(comp, head) {
 			return false
 		}
+		for _, p := range strings.Split(strings.TrimPrefix(comp, head), ", ") {
+			if p == pkg {
+				return true
+			}
+		}
+		return false
 	}
 	// terme simple : suite de mots, le dernier en début de mot
-	t := strings.TrimSpace(words(term))
+	t := strings.TrimSpace(words(wt.Name))
 	return t != "" && strings.Contains(words(externalID)+words(title)+words(component), " "+t)
+}
+
+// affects dit si l'entrée id touche l'une des versions du terme, avec la
+// même prudence que le filtre : sans plage connue pour le paquet, oui.
+func (s *Store) affects(id string, t WatchTerm) (bool, error) {
+	var known, hit bool
+	err := s.db.QueryRow(`SELECT EXISTS (SELECT 1 FROM advisory_ranges WHERE id = ? AND eco = ? AND pkg = ?),
+       EXISTS (SELECT 1 FROM advisory_ranges WHERE id = ? AND eco = ? AND pkg = ? AND vk_affected(?, introduced, fixed, last_affected))`,
+		id, t.Label, t.Package, id, t.Label, t.Package, t.Versions).Scan(&known, &hit)
+	return !known || hit, err
 }
 
 // ExposureByTerm mesure l'exposition de chaque terme surveillé en une seule
@@ -179,34 +189,47 @@ func (s *Store) ExposureByTerm(terms []string) ([]TermExposure, error) {
 		return nil, nil
 	}
 	from, _, args := searchFrom(q)
-	rows, err := s.db.Query(`SELECT a.external_id, a.title, a.component, a.exploited `+from, args...)
+	rows, err := s.db.Query(`SELECT a.id, a.external_id, a.title, a.component, a.exploited `+from, args...)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 	type row struct {
-		ext, title, comp string
-		exploited        bool
+		id, ext, title, comp string
+		exploited            bool
 	}
 	var all []row
 	for rows.Next() {
 		var r row
 		var ext, title, comp sql.NullString
-		if err := rows.Scan(&ext, &title, &comp, &r.exploited); err != nil {
+		if err := rows.Scan(&r.id, &ext, &title, &comp, &r.exploited); err != nil {
 			return nil, err
 		}
 		r.ext, r.title, r.comp = ext.String, title.String, comp.String
 		all = append(all, r)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	rows.Close() // avant les requêtes de affects
 	var out []TermExposure
 	for _, t := range terms {
 		e := TermExposure{Term: t}
+		wt := ParseWatchTerm(t)
 		for _, r := range all {
-			if termMatches(t, r.ext, r.title, r.comp) {
-				e.Severe++
-				if r.exploited {
-					e.Exploited++
+			if !termMatches(t, r.ext, r.title, r.comp) {
+				continue
+			}
+			if wt.Versions != "" {
+				if ok, err := s.affects(r.id, wt); err != nil {
+					return nil, err
+				} else if !ok {
+					continue
 				}
+			}
+			e.Severe++
+			if r.exploited {
+				e.Exploited++
 			}
 		}
 		if e.Severe > 0 {
@@ -219,5 +242,5 @@ func (s *Store) ExposureByTerm(terms []string) ([]TermExposure, error) {
 		}
 		return out[i].Term < out[j].Term
 	})
-	return out, rows.Err()
+	return out, nil
 }

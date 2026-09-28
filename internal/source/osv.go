@@ -152,19 +152,26 @@ type osvVuln struct {
 			Name      string `json:"name"`
 			Ecosystem string `json:"ecosystem"`
 		} `json:"package"`
-		Ranges []struct {
-			Events []map[string]string `json:"events"`
-		} `json:"ranges"`
+		Ranges   []osvRange `json:"ranges"`
+		Versions []string   `json:"versions"`
 	} `json:"affected"`
 	References []struct {
 		URL string `json:"url"`
 	} `json:"references"`
 }
 
+// osvRange est une plage OSV : SEMVER, ECOSYSTEM ou GIT, et ses événements
+// (introduced, fixed, last_affected).
+type osvRange struct {
+	Type   string              `json:"type"`
+	Events []map[string]string `json:"events"`
+}
+
 func (v osvVuln) toAdvisory() model.Advisory {
 	var (
 		pkgs, affected, fixed, remediation []string
 		pkgSeen                            = map[string]bool{}
+		ranges                             []model.Range
 	)
 	for _, af := range v.Affected {
 		name := af.Package.Name
@@ -172,6 +179,7 @@ func (v osvVuln) toAdvisory() model.Advisory {
 			pkgSeen[name] = true
 			pkgs = append(pkgs, name)
 		}
+		ranges = append(ranges, comparableRanges(af.Package.Ecosystem, name, af.Ranges, af.Versions)...)
 		for _, r := range af.Ranges {
 			rng, fix := describeRange(r.Events)
 			if rng != "" {
@@ -222,7 +230,56 @@ func (v osvVuln) toAdvisory() model.Advisory {
 		References:       refs,
 		Published:        parseRFC3339(v.Published),
 		URL:              "https://osv.dev/vulnerability/" + v.ID,
+		Ranges:           ranges,
 	}
+}
+
+// comparableRanges convertit les plages OSV d'un paquet en intervalles
+// comparables. Une plage peut enchaîner plusieurs intervalles (introduced,
+// fixed, introduced, fixed…) ; les plages GIT (empreintes de commits) sont
+// ignorées. Sans plage exploitable, la liste explicite des versions touchées
+// donne un intervalle par version.
+func comparableRanges(ecosystem, name string, rs []osvRange, versions []string) []model.Range {
+	eco := strings.ToLower(ecosystem)
+	if i := strings.IndexByte(eco, ':'); i > 0 { // « Debian:12 » → « debian »
+		eco = eco[:i]
+	}
+	pkg := model.NormalizePackage(eco, name)
+	if pkg == "" {
+		return nil
+	}
+	var out []model.Range
+	for _, r := range rs {
+		if r.Type == "GIT" {
+			continue
+		}
+		var cur *model.Range
+		for _, ev := range r.Events {
+			switch {
+			case ev["introduced"] != "":
+				if cur != nil { // intervalle ouvert, jamais refermé
+					out = append(out, *cur)
+				}
+				cur = &model.Range{Ecosystem: eco, Package: pkg, Introduced: ev["introduced"]}
+			case ev["fixed"] != "" || ev["last_affected"] != "":
+				if cur == nil {
+					cur = &model.Range{Ecosystem: eco, Package: pkg}
+				}
+				cur.Fixed, cur.LastAffected = ev["fixed"], ev["last_affected"]
+				out = append(out, *cur)
+				cur = nil
+			}
+		}
+		if cur != nil {
+			out = append(out, *cur)
+		}
+	}
+	if len(out) == 0 {
+		for _, v := range versions {
+			out = append(out, model.Range{Ecosystem: eco, Package: pkg, Introduced: v, LastAffected: v})
+		}
+	}
+	return out
 }
 
 // describeRange transforme les événements OSV (introduced / fixed /

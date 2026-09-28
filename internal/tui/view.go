@@ -336,6 +336,15 @@ func (m *ui) actionLines(a model.Advisory, w int) []string {
 	case a.EPSS >= 0.1:
 		body = append(body, orange+"⚑ forte probabilité d'exploitation (EPSS "+fmtPct(a.EPSS)+") — à traiter en priorité"+reset)
 	}
+	// versions de la liste de surveillance touchées par cette entrée
+	hits, _ := m.st.WatchedVersionsHit(a.ID)
+	for _, h := range hits {
+		line := bold + orange + "◆ ta version : " + h.Package + " " + h.Version + " est touchée" + reset
+		if h.Fixed != "" {
+			line += dim + " — corrigée en " + h.Fixed + reset
+		}
+		body = append(body, wrapLines(line, w)...)
+	}
 	switch {
 	case a.FixedVersions != "":
 		body = append(body, wrapLines(sty.green.Render("↑ mettre à jour : ")+a.FixedVersions, w)...)

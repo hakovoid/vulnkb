@@ -5,6 +5,8 @@ import (
 	"bytes"
 	"testing"
 	"time"
+
+	"vulnkb/internal/model"
 )
 
 func osvZip(t *testing.T, files map[string]string) *zip.Reader {
@@ -98,5 +100,33 @@ func TestParseOSVZipSince(t *testing.T) {
 	}
 	if len(advs) != 0 {
 		t.Errorf("entrée modifiée avant since conservée: %+v", advs)
+	}
+}
+
+func TestComparableRanges(t *testing.T) {
+	rs := []osvRange{
+		{Type: "GIT", Events: []map[string]string{{"introduced": "0"}, {"fixed": "a1b2c3"}}},
+		{Type: "SEMVER", Events: []map[string]string{{"introduced": "0"}, {"fixed": "0.28.0"}, {"introduced": "1.0.0"}, {"fixed": "1.6.4"}}},
+		{Type: "ECOSYSTEM", Events: []map[string]string{{"introduced": "2.0.0"}, {"last_affected": "2.1.0"}, {"introduced": "3.0.0"}}},
+	}
+	got := comparableRanges("npm", "Axios", rs, nil)
+	want := []model.Range{
+		{Ecosystem: "npm", Package: "axios", Introduced: "0", Fixed: "0.28.0"},
+		{Ecosystem: "npm", Package: "axios", Introduced: "1.0.0", Fixed: "1.6.4"},
+		{Ecosystem: "npm", Package: "axios", Introduced: "2.0.0", LastAffected: "2.1.0"},
+		{Ecosystem: "npm", Package: "axios", Introduced: "3.0.0"},
+	}
+	if len(got) != len(want) {
+		t.Fatalf("plages : %+v", got)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("plage %d : %+v, attendu %+v", i, got[i], want[i])
+		}
+	}
+	// PyPI : nom normalisé ; liste explicite de versions sans plage
+	py := comparableRanges("PyPI", "Pydantic_Settings", nil, []string{"2.0.1"})
+	if len(py) != 1 || py[0] != (model.Range{Ecosystem: "pypi", Package: "pydantic-settings", Introduced: "2.0.1", LastAffected: "2.0.1"}) {
+		t.Errorf("PyPI : %+v", py)
 	}
 }

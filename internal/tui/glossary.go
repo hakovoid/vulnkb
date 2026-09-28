@@ -187,6 +187,7 @@ func helpLines() []string {
 		"  exploit          un exploit ou une preuve de concept public existe (Exploit-DB, Metasploit, GitHub)",
 		"  epss:10          probabilité d'exploitation EPSS d'au moins 10 % (epss:1, epss:50…)",
 		"  mes              seulement les produits surveillés (Ctrl-T ; liste : vulnkb watch, vulnkb watch import)",
+		"                   avec version (npm:axios@1.6.0) : seulement les failles qui touchent ta version",
 		"  Sévérité : celle de la source, sinon la plus haute sévérité NVD des CVE de l'entrée.",
 		"",
 		bold + "Légende de la liste" + reset,

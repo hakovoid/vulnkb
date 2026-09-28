@@ -4,8 +4,11 @@
 //
 // Une dépendance devient un terme qualifié par son écosystème, par exemple
 // « npm:express » : la recherche ne vise alors que ce paquet exact dans le
-// composant des fiches, sans bruit sur les titres. Une image Docker devient
-// un terme simple (« redis », « ollama ») : c'est un produit, cherché partout.
+// composant des fiches, sans bruit sur les titres. Quand la version installée
+// est connue avec certitude (fichier de verrouillage, version figée), elle
+// est ajoutée : « npm:express@4.18.2 » ; seules les failles qui la touchent
+// seront retenues. Une image Docker devient un terme simple (« redis »,
+// « ollama ») : c'est un produit, cherché partout.
 package manifest
 
 import (
@@ -98,13 +101,18 @@ func parsePackageJSON(path string, opt Options) []string {
 	if b, err := os.ReadFile(path); err != nil || json.Unmarshal(b, &pkg) != nil {
 		return nil
 	}
+	lock := npmLock(filepath.Dir(path))
 	var out []string
 	add := func(deps map[string]string) {
-		for name, ver := range deps {
-			if strings.HasPrefix(ver, "file:") || strings.HasPrefix(ver, "workspace:") || strings.HasPrefix(ver, "link:") {
+		for name, spec := range deps {
+			if strings.HasPrefix(spec, "file:") || strings.HasPrefix(spec, "workspace:") || strings.HasPrefix(spec, "link:") {
 				continue // paquet local, pas de faille publique
 			}
-			out = append(out, "npm:"+name)
+			ver := lock(name)
+			if ver == "" {
+				ver = exactVersion(spec)
+			}
+			out = append(out, withVersion("npm:"+name, ver))
 		}
 	}
 	add(pkg.Dependencies)
@@ -114,7 +122,7 @@ func parsePackageJSON(path string, opt Options) []string {
 	return out
 }
 
-var goRequireRe = regexp.MustCompile(`^\s*(?:require\s+)?([a-zA-Z0-9][\w.\-/~]*\.[\w.\-/~]+)\s+v\S+(.*)$`)
+var goRequireRe = regexp.MustCompile(`^\s*(?:require\s+)?([a-zA-Z0-9][\w.\-/~]*\.[\w.\-/~]+)\s+(v\S+)(.*)$`)
 
 func parseGoMod(path string, opt Options) []string {
 	f, err := os.Open(path)
@@ -142,10 +150,11 @@ func parseGoMod(path string, opt Options) []string {
 		if m == nil {
 			continue
 		}
-		if !opt.Indirect && strings.Contains(m[2], "// indirect") {
+		if !opt.Indirect && strings.Contains(m[3], "// indirect") {
 			continue
 		}
-		out = append(out, "go:"+m[1])
+		ver := strings.TrimSuffix(strings.TrimPrefix(m[2], "v"), "+incompatible")
+		out = append(out, withVersion("go:"+m[1], ver))
 	}
 	return out
 }
@@ -167,6 +176,7 @@ func parseRequirements(path string) []string {
 		return nil
 	}
 	defer f.Close()
+	lock := pyLock(filepath.Dir(path))
 	var out []string
 	sc := bufio.NewScanner(f)
 	for sc.Scan() {
@@ -175,7 +185,7 @@ func parseRequirements(path string) []string {
 			continue // commentaire, option (-r, -e…), URL
 		}
 		if n := pyName(t); n != "" {
-			out = append(out, "pypi:"+n)
+			out = append(out, withVersion("pypi:"+n, pyVersion(t, lock[pyKey(n)])))
 		}
 	}
 	return out
@@ -189,7 +199,13 @@ func parsePyproject(path string) []string {
 	if err != nil {
 		return nil
 	}
+	lock := pyLock(filepath.Dir(path))
 	var out []string
+	dep := func(spec string) {
+		if n := pyName(spec); n != "" && n != "python" {
+			out = append(out, withVersion("pypi:"+n, pyVersion(spec, lock[pyKey(n)])))
+		}
+	}
 	section, inDeps := "", false
 	for _, line := range strings.Split(string(b), "\n") {
 		t := strings.TrimSpace(line)
@@ -201,9 +217,7 @@ func parsePyproject(path string) []string {
 		case section == "[project]" && strings.HasPrefix(t, "dependencies") && strings.Contains(t, "["):
 			inDeps = !strings.Contains(t, "]")
 			for _, m := range quotedRe.FindAllStringSubmatch(t, -1) {
-				if n := pyName(m[1] + m[2]); n != "" {
-					out = append(out, "pypi:"+n)
-				}
+				dep(m[1] + m[2])
 			}
 		case inDeps:
 			if strings.HasPrefix(t, "]") {
@@ -211,14 +225,16 @@ func parsePyproject(path string) []string {
 				continue
 			}
 			for _, m := range quotedRe.FindAllStringSubmatch(t, -1) {
-				if n := pyName(m[1] + m[2]); n != "" {
-					out = append(out, "pypi:"+n)
-				}
+				dep(m[1] + m[2])
 			}
 		case section == "[tool.poetry.dependencies]" && strings.Contains(t, "="):
-			if n := pyName(t); n != "" && n != "python" {
-				out = append(out, "pypi:"+n)
+			// « fastapi = "0.110.0" » : la valeur est la contrainte
+			name, spec, _ := strings.Cut(t, "=")
+			spec = strings.Trim(strings.TrimSpace(spec), `"'`)
+			if strings.ContainsAny(spec[:min(1, len(spec))], "0123456789") {
+				spec = "==" + spec
 			}
+			dep(strings.TrimSpace(name) + spec)
 		}
 	}
 	return out
@@ -231,12 +247,17 @@ func parseComposer(path string) []string {
 	if b, err := os.ReadFile(path); err != nil || json.Unmarshal(b, &c) != nil {
 		return nil
 	}
+	lock := lockVersions(filepath.Join(filepath.Dir(path), "composer.lock"), parseComposerLock)
 	var out []string
-	for name := range c.Require {
+	for name, spec := range c.Require {
 		if name == "php" || strings.HasPrefix(name, "ext-") || !strings.Contains(name, "/") {
 			continue
 		}
-		out = append(out, "packagist:"+name)
+		ver := lock[strings.ToLower(name)]
+		if ver == "" {
+			ver = exactVersion(spec)
+		}
+		out = append(out, withVersion("packagist:"+name, ver))
 	}
 	return out
 }
@@ -248,6 +269,7 @@ func parseCargo(path string) []string {
 	if err != nil {
 		return nil
 	}
+	lock := lockVersions(filepath.Join(filepath.Dir(path), "Cargo.lock"), parseTOMLPackages)
 	var out []string
 	section := ""
 	for _, line := range strings.Split(string(b), "\n") {
@@ -258,7 +280,7 @@ func parseCargo(path string) []string {
 		}
 		if section == "[dependencies]" {
 			if m := tomlKeyRe.FindStringSubmatch(t); m != nil {
-				out = append(out, "crates:"+m[1])
+				out = append(out, withVersion("crates:"+m[1], lock[strings.ToLower(m[1])]))
 			}
 		}
 	}

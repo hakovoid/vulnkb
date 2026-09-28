@@ -42,8 +42,8 @@ func TestScan(t *testing.T) {
 	}
 	want := map[string][]string{
 		"app/package.json":    {"npm:@astrojs/rss", "npm:express"},
-		"svc/go.mod":          {"go:github.com/spf13/cobra", "go:gopkg.in/yaml.v3"},
-		"py/requirements.txt": {"pypi:fastapi", "pypi:pillow", "pypi:uvicorn"},
+		"svc/go.mod":          {"go:github.com/spf13/cobra@1.10.2", "go:gopkg.in/yaml.v3@3.0.1"},
+		"py/requirements.txt": {"pypi:fastapi", "pypi:pillow@10.4", "pypi:uvicorn"},
 		"py/pyproject.toml":   {"pypi:httpx", "pypi:pydantic-settings", "pypi:requests"},
 		"php/composer.json":   {"packagist:monolog/monolog"},
 		"rs/Cargo.toml":       {"crates:serde", "crates:tokio"},
@@ -78,6 +78,56 @@ func TestScan(t *testing.T) {
 			if len(f.Terms) != 3 {
 				t.Errorf("-indirect : %q", f.Terms)
 			}
+		}
+	}
+}
+
+// Versions installées : fichiers de verrouillage et versions figées.
+func TestScanVersions(t *testing.T) {
+	root := t.TempDir()
+	// monorepo npm : un seul package-lock.json à la racine, une version
+	// imbriquée propre à un espace de travail
+	write(t, root, "mono/package.json", `{"dependencies":{"express":"^4.18"}}`)
+	write(t, root, "mono/client/package.json", `{"dependencies":{"axios":"^1.6","react":"18.2.0","left-pad":"^1"}}`)
+	write(t, root, "mono/package-lock.json", `{"lockfileVersion":3,"packages":{
+		"":{}, "node_modules/express":{"version":"4.18.2"}, "node_modules/axios":{"version":"1.7.9"},
+		"client/node_modules/axios":{"version":"1.6.0"}}}`)
+	write(t, root, "py/pyproject.toml", "[project]\ndependencies = [\"fastapi>=0.110\", \"httpx==0.27.0\", \"Pydantic_Settings\"]\n")
+	write(t, root, "py/uv.lock", "version = 1\n\n[[package]]\nname = \"fastapi\"\nversion = \"0.115.6\"\n\n[[package]]\nname = \"pydantic-settings\"\nversion = \"2.7.0\"\n")
+	write(t, root, "php/composer.json", `{"require":{"monolog/monolog":"^3","guzzlehttp/guzzle":"7.9.2"}}`)
+	write(t, root, "php/composer.lock", `{"packages":[{"name":"monolog/monolog","version":"v3.8.1"}]}`)
+	write(t, root, "rs/Cargo.toml", "[dependencies]\nrand = \"0.8\"\nserde = \"1\"\n")
+	write(t, root, "rs/Cargo.lock", "[[package]]\nname = \"rand\"\nversion = \"0.7.3\"\n\n[[package]]\nname = \"rand\"\nversion = \"0.8.5\"\n")
+
+	found, err := Scan(root, Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string][]string{}
+	for _, f := range found {
+		got[f.File] = f.Terms
+	}
+	want := map[string][]string{
+		"mono/package.json":        {"npm:express@4.18.2"},
+		"mono/client/package.json": {"npm:axios@1.6.0", "npm:left-pad", "npm:react@18.2.0"},
+		"py/pyproject.toml":        {"pypi:fastapi@0.115.6", "pypi:httpx@0.27.0", "pypi:pydantic_settings@2.7.0"},
+		"php/composer.json":        {"packagist:guzzlehttp/guzzle@7.9.2", "packagist:monolog/monolog@3.8.1"},
+		"rs/Cargo.toml":            {"crates:rand@0.7.3,0.8.5", "crates:serde"},
+	}
+	for k, v := range want {
+		if !reflect.DeepEqual(got[k], v) {
+			t.Errorf("%s : obtenu %q, attendu %q", k, got[k], v)
+		}
+	}
+}
+
+func TestExactVersion(t *testing.T) {
+	for spec, want := range map[string]string{
+		"1.2.3": "1.2.3", "=1.2.3": "1.2.3", "v2.0.0-rc.1": "2.0.0-rc.1",
+		"^1.2.3": "", "~1.2": "", ">=1.0": "", "*": "", "latest": "", "1.x": "",
+	} {
+		if got := exactVersion(spec); got != want {
+			t.Errorf("exactVersion(%q) = %q, attendu %q", spec, got, want)
 		}
 	}
 }

@@ -156,28 +156,36 @@ var watchEcosystems = map[string]struct{ token, label string }{
 //     en début de mot dans l'identifiant, le titre ou le composant), ou si
 //     un paquet qualifié (« npm:react ») figure exactement dans la liste du
 //     composant (« npm react, react-dom ») — ce qui écarte
-//     « @aws-amplify/codegen-ui-react » et les faux positifs des noms courts.
+//     « @aws-amplify/codegen-ui-react » et les faux positifs des noms courts ;
+//     avec une version (« npm:react@18.2.0 »), seulement si l'entrée la
+//     touche (voir versionCond).
 func watchClause(terms []string) (string, []any) {
 	const inFTS = "a.rowid IN (SELECT rowid FROM advisories_fts WHERE advisories_fts MATCH ?)"
 	var candidates, plain, conds []string
 	var args []any
-	for _, t := range terms {
-		t = strings.TrimSpace(strings.ReplaceAll(t, `"`, ""))
-		if t == "" {
+	for _, raw := range terms {
+		t := ParseWatchTerm(raw)
+		if t.Name == "" {
 			continue
 		}
-		if eco, pkg, ok := strings.Cut(t, ":"); ok && pkg != "" {
-			if e, known := watchEcosystems[strings.ToLower(eco)]; known {
-				p := likeEscape(strings.ToLower(pkg))
-				candidates = append(candidates, `component:(`+e.token+` "`+pkg+`")`)
-				conds = append(conds, `lower(a.component) = ? OR lower(a.component) LIKE ? ESCAPE '\'
-     OR lower(a.component) LIKE ? ESCAPE '\' OR lower(a.component) LIKE ? ESCAPE '\'`)
-				args = append(args, e.label+" "+strings.ToLower(pkg),
-					likeEscape(e.label)+" "+p+",%", "%, "+p, "%, "+p+",%")
-				continue
+		if t.Ecosystem != "" {
+			e := watchEcosystems[t.Ecosystem]
+			pkg := strings.ToLower(t.Name)
+			p := likeEscape(pkg)
+			candidates = append(candidates, `component:(`+e.token+` "`+t.Name+`")`)
+			cond := `(lower(a.component) = ? OR lower(a.component) LIKE ? ESCAPE '\'
+     OR lower(a.component) LIKE ? ESCAPE '\' OR lower(a.component) LIKE ? ESCAPE '\')`
+			args = append(args, e.label+" "+pkg, likeEscape(e.label)+" "+p+",%", "%, "+p, "%, "+p+",%")
+			// version connue : seulement les entrées qui la touchent
+			if t.Versions != "" {
+				vc, vargs := versionCond(t)
+				cond = "(" + cond + " AND " + vc + ")"
+				args = append(args, vargs...)
 			}
+			conds = append(conds, cond)
+			continue
 		}
-		plain = append(plain, `"`+t+`"*`)
+		plain = append(plain, `"`+t.Name+`"*`)
 	}
 	if len(plain) > 0 {
 		expr := "{external_id title component}:(" + strings.Join(plain, " OR ") + ")"

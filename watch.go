@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -14,7 +15,8 @@ import (
 
 const watchHeader = "# Produits surveillés par vulnkb (un par ligne). Filtre « mes » dans la recherche.\n" +
 	"# Terme simple (nginx) : cherché dans l'identifiant, le titre et le composant.\n" +
-	"# Terme qualifié (npm:express, pypi:fastapi, go:github.com/x/y) : paquet exact de cet écosystème."
+	"# Terme qualifié (npm:express, pypi:fastapi, go:github.com/x/y) : paquet exact de cet écosystème.\n" +
+	"# Avec version (npm:express@4.18.2, ou 4.18.2,5.0.1) : seulement les failles qui la touchent."
 
 // watchCmd gère la liste de surveillance :
 //
@@ -94,12 +96,16 @@ func watchImport(path string, args []string) error {
 		roots = []string{"."}
 	}
 
-	lines := readWatchFile(path)
-	known := map[string]bool{}
-	for _, t := range termsOf(lines) {
-		known[strings.ToLower(t)] = true
+	// 1. lecture de tous les projets : les versions d'un même paquet sont
+	// réunies ; une seule version incertaine (plage « ^1.2 », pas de fichier
+	// de verrouillage) et le terme reste sans version, par prudence
+	type fileFound struct {
+		abs   string
+		found manifest.Found
 	}
-	added, npm := 0, false
+	var files []fileFound
+	vers := map[string][]string{}
+	uncertain := map[string]bool{}
 	for _, root := range roots {
 		abs, err := filepath.Abs(root)
 		if err != nil {
@@ -111,45 +117,100 @@ func watchImport(path string, args []string) error {
 		}
 		if len(found) == 0 {
 			fmt.Printf("%s : aucun fichier de dépendances trouvé\n", abs)
-			continue
 		}
-		header := false
 		for _, f := range found {
-			var fresh []string
+			files = append(files, fileFound{abs, f})
 			for _, t := range f.Terms {
-				if !known[strings.ToLower(t)] {
-					known[strings.ToLower(t)] = true
-					fresh = append(fresh, t)
+				wt := store.ParseWatchTerm(t)
+				k := watchKey(wt)
+				if wt.Ecosystem == "" {
+					continue
+				}
+				if wt.Versions == "" {
+					uncertain[k] = true
+				}
+				for _, v := range strings.Split(wt.Versions, ",") {
+					if v != "" && !slices.Contains(vers[k], v) {
+						vers[k] = append(vers[k], v)
+					}
 				}
 			}
-			fmt.Printf("  %-48s %3d dépendance(s), %d nouvelle(s)\n", f.File, len(f.Terms), len(fresh))
-			if len(fresh) == 0 {
-				continue
-			}
-			for _, t := range fresh {
-				npm = npm || strings.HasPrefix(t, "npm:")
-			}
-			if !header {
-				lines = append(lines, "", fmt.Sprintf("# --- import du %s depuis %s ---", time.Now().Format("2006-01-02"), abs))
-				header = true
-			}
-			lines, _ = appendTerms(lines, fresh, "# "+f.File)
-			added += len(fresh)
+		}
+	}
+	final := func(wt store.WatchTerm) string {
+		k := watchKey(wt)
+		base := wt.Ecosystem + ":" + wt.Name
+		if wt.Ecosystem == "" {
+			return wt.Name
+		}
+		if uncertain[k] || len(vers[k]) == 0 {
+			return base
+		}
+		return base + "@" + strings.Join(vers[k], ",")
+	}
+
+	// 2. mise à jour des versions des termes déjà suivis
+	lines := readWatchFile(path)
+	known := map[string]bool{}
+	updated := 0
+	for i, l := range lines {
+		t := strings.TrimSpace(l)
+		if t == "" || strings.HasPrefix(t, "#") {
+			continue
+		}
+		wt := store.ParseWatchTerm(t)
+		k := watchKey(wt)
+		known[k] = true
+		if wt.Ecosystem == "" || (!uncertain[k] && len(vers[k]) == 0) {
+			continue // paquet absent de cet import : inchangé
+		}
+		if nl := final(wt); nl != t {
+			lines[i] = nl
+			updated++
+			fmt.Printf("  version : %s → %s\n", t, nl)
 		}
 	}
 
+	// 3. ajout des nouveaux termes, regroupés par fichier
+	added, npm := 0, false
+	lastRoot := ""
+	for _, ff := range files {
+		f := ff.found
+		var fresh []string
+		for _, t := range f.Terms {
+			wt := store.ParseWatchTerm(t)
+			if k := watchKey(wt); !known[k] {
+				known[k] = true
+				fresh = append(fresh, final(wt))
+			}
+		}
+		fmt.Printf("  %-48s %3d dépendance(s), %d nouvelle(s)\n", f.File, len(f.Terms), len(fresh))
+		if len(fresh) == 0 {
+			continue
+		}
+		for _, t := range fresh {
+			npm = npm || strings.HasPrefix(t, "npm:")
+		}
+		if ff.abs != lastRoot {
+			lines = append(lines, "", fmt.Sprintf("# --- import du %s depuis %s ---", time.Now().Format("2006-01-02"), ff.abs))
+			lastRoot = ff.abs
+		}
+		lines, _ = appendTerms(lines, fresh, "# "+f.File)
+		added += len(fresh)
+	}
+
 	switch {
-	case added == 0:
+	case added == 0 && updated == 0:
 		fmt.Println("Rien de nouveau à ajouter.")
 		return nil
 	case *dry:
-		fmt.Printf("%d terme(s) seraient ajoutés (simulation, liste inchangée).\n", added)
+		fmt.Printf("%d terme(s) seraient ajoutés et %d version(s) mises à jour (simulation, liste inchangée).\n", added, updated)
 		return nil
 	}
 	if err := writeWatchFile(path, lines); err != nil {
 		return err
 	}
-	fmt.Printf("%d terme(s) ajoutés à %s (total : %d).\n", added, path, len(termsOf(lines)))
+	fmt.Printf("%d terme(s) ajoutés et %d version(s) mises à jour dans %s (total : %d).\n", added, updated, path, len(termsOf(lines)))
 	if npm {
 		fmt.Println("Des paquets npm sont surveillés : pense à collecter leurs failles avec « vulnkb sync osv-npm ».")
 	}
@@ -190,17 +251,28 @@ func termsOf(lines []string) []string {
 // appendTerms ajoute les termes absents de la liste, précédés d'un
 // commentaire s'il est fourni ; renvoie aussi le nombre ajouté.
 func appendTerms(lines, terms []string, comment string) ([]string, int) {
-	known := map[string]bool{}
-	for _, t := range termsOf(lines) {
-		known[strings.ToLower(t)] = true
+	known := map[string]int{} // clé → indice de la ligne
+	for i, l := range lines {
+		if t := strings.TrimSpace(l); t != "" && !strings.HasPrefix(t, "#") {
+			known[watchKey(store.ParseWatchTerm(t))] = i
+		}
 	}
 	var fresh []string
 	for _, t := range terms {
 		t = strings.TrimSpace(t)
-		if t != "" && !known[strings.ToLower(t)] {
-			known[strings.ToLower(t)] = true
-			fresh = append(fresh, t)
+		if t == "" {
+			continue
 		}
+		wt := store.ParseWatchTerm(t)
+		k := watchKey(wt)
+		if i, ok := known[k]; ok {
+			if i >= 0 && wt.Ecosystem != "" {
+				lines[i] = t // même paquet, autre version : remplacée
+			}
+			continue
+		}
+		known[k] = -1
+		fresh = append(fresh, t)
 	}
 	if len(fresh) == 0 {
 		return lines, 0
@@ -211,21 +283,31 @@ func appendTerms(lines, terms []string, comment string) ([]string, int) {
 	return append(lines, fresh...), len(fresh)
 }
 
-// removeTerms retire les lignes égales (sans tenir compte de la casse) aux
-// termes donnés ; les commentaires restent.
+// removeTerms retire les termes donnés, quelle que soit leur version
+// (« npm:axios » retire « npm:axios@1.6.0 ») ; les commentaires restent.
 func removeTerms(lines, terms []string) []string {
 	drop := map[string]bool{}
 	for _, t := range terms {
-		drop[strings.ToLower(strings.TrimSpace(t))] = true
+		drop[watchKey(store.ParseWatchTerm(strings.TrimSpace(t)))] = true
 	}
 	var out []string
 	for _, l := range lines {
-		if drop[strings.ToLower(strings.TrimSpace(l))] {
+		t := strings.TrimSpace(l)
+		if t != "" && !strings.HasPrefix(t, "#") && drop[watchKey(store.ParseWatchTerm(t))] {
 			continue
 		}
 		out = append(out, l)
 	}
 	return out
+}
+
+// watchKey identifie un terme sans sa version : « npm:axios@1.6.0 » et
+// « npm:Axios » désignent le même paquet.
+func watchKey(t store.WatchTerm) string {
+	if t.Ecosystem != "" {
+		return t.Ecosystem + ":" + t.Package
+	}
+	return strings.ToLower(t.Name)
 }
 
 func watchlistPath() string {

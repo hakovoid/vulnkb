@@ -56,10 +56,14 @@ service en ligne une fois la collecte faite.
 
 **Tes produits**
 - Liste de surveillance (`mes`) : termes simples ou paquets exacts
-  (`npm:express`).
-- Import automatique des dépendances de tes projets : `package.json`,
-  `go.mod`, `requirements.txt`, `pyproject.toml`, `composer.json`,
-  `Cargo.toml`, `docker-compose`.
+  (`npm:express`), avec la version que tu utilises (`npm:express@4.18.2`).
+  Seules les failles qui touchent **ta** version sont retenues, et la fiche
+  l'indique (« ta version : express 4.18.2 est touchée — corrigée en … »).
+- Import automatique des dépendances de tes projets et de leurs versions
+  installées : `package.json` + `package-lock.json`, `go.mod`,
+  `requirements.txt`, `pyproject.toml` + `poetry.lock`/`uv.lock`,
+  `composer.json` + `composer.lock`, `Cargo.toml` + `Cargo.lock`,
+  `docker-compose`.
 - Exposition par produit dans les statistiques.
 
 **Interface terminal**
@@ -297,24 +301,46 @@ main.
 vulnkb watch                         # affiche la liste
 vulnkb watch add nginx redis vtiger  # ajoute des produits
 vulnkb watch add npm:axios pypi:fastapi   # ajoute des paquets exacts
+vulnkb watch add npm:axios@1.6.0     # … avec la version utilisée
 vulnkb watch rm vtiger               # en retire
 vulnkb watch import ~/kuro_apps      # ajoute les dépendances de tous tes projets
 vulnkb watch import -n ~/kuro_apps   # simulation, sans rien modifier
 ```
 
-Il y a deux sortes de termes :
+Il y a trois sortes de termes :
 
 - **simple** (`nginx`, `redis`, `vtiger`) : cherché en début de mot dans
   l'identifiant, le titre et le composant.
 - **qualifié** (`npm:express`, `pypi:pillow`, `go:github.com/spf13/cobra`,
   `packagist:…`, `crates:…`) : seul ce paquet exact compte. Par exemple,
   `npm:react` ne ramène pas `@aws-amplify/codegen-ui-react`.
+- **qualifié avec version** (`npm:express@4.18.2`, ou plusieurs :
+  `npm:axios@1.6.0,1.7.9`) : seulement les failles dont les plages de
+  versions (OSV) touchent l'une de ces versions. Une faille sans plage connue
+  reste affichée par prudence : mieux vaut un faux positif qu'une faille
+  manquée.
 
 `watch import` lit les fichiers suivants : `package.json`, `go.mod`,
 `requirements.txt`, `pyproject.toml`, `composer.json`, `Cargo.toml` et les
 images `docker-compose`. Il ignore `node_modules`, les dossiers cachés et les
 sauvegardes. Les dépendances de dev et les dépendances Go indirectes ne sont
 ajoutées qu'avec `-dev` et `-indirect`.
+
+**Versions.** L'import note la version installée quand elle est certaine :
+
+- versions exactes des fichiers de verrouillage (`package-lock.json`, y compris
+  pour les espaces de travail, `poetry.lock`, `uv.lock`, `composer.lock`,
+  `Cargo.lock`), de `go.mod`, et des dépendances figées (`fastapi==0.109.2`) ;
+- si un paquet est utilisé en plusieurs versions dans tes projets, toutes
+  sont gardées ;
+- si une seule de ces utilisations a une version incertaine (plage
+  `^1.2` ou `>=0.110` sans fichier de verrouillage), le terme reste sans
+  version, par prudence.
+
+Relance `vulnkb watch import ~/projets` après une mise à jour de dépendances :
+les versions sont actualisées, et `-n` montre les changements sans rien
+écrire. `vulnkb watch rm npm:axios` retire le paquet, quelle que soit sa
+version.
 
 Si tes projets utilisent npm, lance aussi `vulnkb sync osv-npm`, qui n'est pas
 dans le sync par défaut.
@@ -506,7 +532,8 @@ internal/nvd/       scores et fiches NVD
 internal/cvelist/   liste officielle des CVE (CVE List V5) et Vulnrichment de la CISA
 internal/exploits/  références d'exploits publics (Exploit-DB, Metasploit, GitHub)
 internal/epss/      scores EPSS (FIRST)
-internal/manifest/  lecture des fichiers de dépendances (watch import)
+internal/manifest/  lecture des fichiers de dépendances et de verrouillage (watch import)
+internal/versions/  comparaison de versions (semver, PEP 440…) et plages vulnérables
 internal/extract/   article ou texte → fiche via Ollama (commande add)
 internal/glossary/  glossaire des acronymes (aide et commande glossaire)
 internal/tui/       interface Bubble Tea + Lipgloss, statistiques, export HTML

@@ -246,14 +246,25 @@ regroupés par projet sous un commentaire ; relancer l'import n'ajoute que ce
 qui a changé.
 
 La liste est un simple fichier `~/.config/vulnkb/watch.txt` (un terme par
-ligne, `#` pour commenter, éditable à la main). Deux sortes de termes :
+ligne, `#` pour commenter, éditable à la main). Trois sortes de termes :
 
 - **terme simple** (`nginx`, `vtiger`, une image Docker) : cherché en début de
   mot dans l'identifiant, le titre et le composant ;
 - **terme qualifié** (`npm:express`, `pypi:fastapi`, `go:github.com/spf13/cobra`,
   `packagist:…`, `crates:…`) : seul ce paquet exact de cet écosystème compte,
   pour éviter le bruit des noms courts (`npm:ms` ne ramène pas « MSRC »,
-  `npm:react` ne ramène pas `@aws-amplify/codegen-ui-react`).
+  `npm:react` ne ramène pas `@aws-amplify/codegen-ui-react`) ;
+- **terme qualifié avec version** (`npm:express@4.18.2`, plusieurs versions
+  séparées par des virgules) : seules les failles dont les plages de versions
+  OSV touchent ta version comptent, et la fiche le signale (« ◆ ta version :
+  express 4.18.2 est touchée — corrigée en … »). Une faille sans plage connue
+  reste affichée par prudence. `watch import` écrit ces versions d'après les
+  fichiers de verrouillage (`package-lock.json`, `poetry.lock`, `uv.lock`,
+  `composer.lock`, `Cargo.lock`), `go.mod` et les dépendances figées (`==`) ;
+  une version incertaine (plage `^1.2` sans verrouillage) laisse le terme sans
+  version. Relancer l'import après une mise à jour actualise les versions.
+  Les plages de versions sont stockées à la synchro OSV : après une mise à
+  jour de vulnkb, relance `vulnkb sync` une fois.
 
 Dans la recherche, `mes` (ou **Ctrl-T**, qui l'ajoute et le retire) ne montre
 que les entrées liées à ta liste ; `mes sev:high+` ou `mes exploitee`
